@@ -1,0 +1,20 @@
+[package]
+name = "plu"
+version = "0.0.1"
+authors = ["Jonathan Foucher <jfoucher@gmail.com>"]
+description = "Planck 6502 computer emulator"
+license = "MIT"
+edition = "2021"
+repository = "https://github.com/jfoucher/planck-emulator"
+keywords = []
+categories = ["command-line-utilities"]
+exclude = [
+    "img/*",
+]
+
+[dependencies]
+crossterm = "0.27.0"
+tui = { package = "ratatui", version = "0.23" }
+rand = "0.8.5"
+itertools = "0.11"
+chrono = "0.4"
