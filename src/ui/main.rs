@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
+use itertools::Itertools;
 use tui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders, Wrap, ListItem, List, Table, Row, Padding}};
 
 
@@ -15,9 +16,7 @@ This is the Planck 6502 emulator. Enjoy
 
 
 
-pub fn draw_main_help<'a, B>(f: &mut Frame<B>, app: &mut App, area: Rect)
-where
-    B: Backend,
+pub fn draw_main_help(f: &mut Frame, app: &mut App, area: Rect)
 {
 
     let chunks = Layout::default()
@@ -51,9 +50,7 @@ where
 }
 
 
-pub fn draw_main_tab<'a, B>(f: &mut Frame<B>, app: &mut App, area: Rect)
-where
-    B: Backend,
+pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
 {
     
     let chunks = Layout::default()
@@ -61,7 +58,7 @@ where
         .margin(0)
         .constraints(
             [
-                Constraint::Min(6),     // Job history
+                Constraint::Min(6),     // debug output
                 Constraint::Length(1),     // title
                 Constraint::Length(10),
                 Constraint::Max(1),     // Tab Footer
@@ -70,7 +67,7 @@ where
         )
         .split(area);
 
-    let p = Paragraph::new(app.debug.clone())
+    let p = Paragraph::new(app.debug.iter().join("\n"))
         .block(Block::default()
             .borders(Borders::NONE)
         )

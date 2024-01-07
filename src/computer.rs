@@ -127,6 +127,10 @@ impl Computer {
         true
     }
 
+    fn read(&mut self, addr: u16) -> u8 {
+        return self.data[addr as usize];
+    }
+
 
     pub fn reset(&mut self) {
         self.processor.pc = self.get_word(0xfffe);
@@ -201,24 +205,54 @@ impl Computer {
             "TXA" => self.txa(),
             "TXS" => self.txs(),
             "TYA" => self.tya(),
+
+            "BBS0" => self.bbs(0),
+            "BBS1" => self.bbs(1),
+            "BBS2" => self.bbs(2),
+            "BBS3" => self.bbs(3),
+            "BBS4" => self.bbs(4),
+            "BBS5" => self.bbs(5),
+            "BBS6" => self.bbs(6),
+            "BBS7" => self.bbs(7),
+
+            "BBR0" => self.bbr(0),
+            "BBR1" => self.bbr(1),
+            "BBR2" => self.bbr(2),
+            "BBR3" => self.bbr(3),
+            "BBR4" => self.bbr(4),
+            "BBR5" => self.bbr(5),
+            "BBR6" => self.bbr(6),
+            "BBR7" => self.bbr(7),
+
+            "NOP2" => {
+                self.nop();
+                self.nop()
+            },
+            "NOP3" => {
+                self.nop();
+                self.nop();
+                self.nop();
+
+            }
             
             _ => {
-                println!("Running instruction nop : {:x?}", inst);
+                //panic!("Running instruction nop : {:x?}", inst);
                 self.nop();
             },
         };
     }
 
     fn add_info(&mut self, info: String) {
-        let _ = self.tx.send(ComputerMessage::Info(info));
-        // let len = self.processor.info.len();
-        // if len > 0 && self.processor.info[len-1].msg == info {
-        //     let last_element = self.processor.info.pop().unwrap();
-        //     self.processor.info.push(Info {msg: info, qty: last_element.qty + 1});
-        //     self.paused = true;
-        // } else {
-        //     self.processor.info.push(Info {msg: info, qty: 1});
-        // }
+        let _ = self.tx.send(ComputerMessage::Info(info.clone()));
+        let len = self.processor.info.len();
+        if len > 0 && self.processor.info[len-1].msg == info {
+            let last_element = self.processor.info.pop().unwrap();
+            self.processor.info.push(Info {msg: info, qty: last_element.qty + 1});
+            self.paused = true;
+            let _ = self.tx.send(ComputerMessage::Info(String::from("Computer paused")));
+        } else {
+            self.processor.info.push(Info {msg: info, qty: 1});
+        }
 
     }
 
@@ -526,7 +560,7 @@ impl Computer {
         self.processor.sp = self.processor.sp.wrapping_add(1);
         let addr: u16 = (self.processor.sp as u16 + 0x100 as u16).into();
         
-        self.processor.rx = self.data[addr as usize];
+        self.processor.ry = self.data[addr as usize];
         let flags = self.processor.flags;
         self.processor.flags = Self::set_flags(flags, self.processor.ry);
         if LOG_LEVEL > 0 {
@@ -810,7 +844,10 @@ impl Computer {
 
         let mut value: u8 = 0;
         let addr = self.get_ld_adddr(mode);
-        if (mode == ADRESSING_MODE::ACCUMULATOR) {
+        if LOG_LEVEL > 0 {
+            self.add_info(format!("{:#x} - Running instruction asl {:?} with effective addr: {:#x}", self.processor.pc, mode, addr));
+        }
+        if mode == ADRESSING_MODE::ACCUMULATOR {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
@@ -840,7 +877,7 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if (mode == ADRESSING_MODE::ACCUMULATOR) {
+        if mode == ADRESSING_MODE::ACCUMULATOR {
             self.processor.acc = result;
         } else {
             let mut _addr = self.data.to_vec();
@@ -1170,7 +1207,7 @@ self.add_info(format!("{:#x} - Running instruction cpy ry: {:#x} with val: {:#x}
         } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE {
             value = self.data[addr as usize];
         } else {
-            panic!("Unknown address type");
+            panic!("Unknown address type {:?} inst: {:#x}", addressing_mode, self.processor.inst);
         }
         
         let mut flags = self.processor.flags;
@@ -1287,21 +1324,24 @@ self.add_info(format!("{:#x} - Running instruction cpx rx: {:#x} with val: {:#x}
     fn jmp(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mut value: u16 = 0;
-        let mut pc = self.processor.pc + 2;
         if addressing_mode == ADRESSING_MODE::ABSOLUTE {
             value = self.get_word(self.processor.pc + 1);
         } else if addressing_mode == ADRESSING_MODE::INDIRECT {
             let start = self.processor.pc + 1;
-            pc += 1;
+    
             let addr = self.get_word(start);
             value = self.get_word(addr);
+        } else if addressing_mode == ADRESSING_MODE::INDIRECT_X {
+            let start = self.processor.pc + 1;
+            let addr = self.get_word(start).wrapping_add(self.processor.rx as u16);
+            value = self.get_word(addr);
         } else {
-            panic!("Adressing mode not implmented yet");
+            panic!("Adressing mode not implemented yet {:?} inst: {:#x}", addressing_mode, self.processor.inst);
         }
-
+        self.processor.clock += 5;
         if LOG_LEVEL > 0 {
-self.add_info(format!("{:#x} - Running instruction jmp: {:#x} to: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], value));
-}
+            self.add_info(format!("{:#x} - Running instruction jmp: {:#x} to: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], value));
+        }
         //// println!("Jumping to 0x{:x?}", addr);
         self.processor.pc = value;
     }
@@ -1458,7 +1498,7 @@ self.add_info(format!("{:#x} - Running instruction jmp: {:#x} to: {:#x}", self.p
         let should_jump = (self.processor.flags >> 7) & 1 == 0;
         let mut new_addr :u16;
         new_addr = self.processor.pc + 2;
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // println!("BPL Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1479,6 +1519,33 @@ self.add_info(format!("{:#x} - Running instruction jmp: {:#x} to: {:#x}", self.p
         self.processor.pc = new_addr;
         self.processor.clock += 3;
         
+    }
+
+    fn bbs(&mut self, num: u8) {
+        let offset = self.read(self.processor.pc + 2);
+        let zpa = self.read(self.processor.pc + 1);
+        let should_jump = (self.read(zpa as u16) >> num) & 1 == 1;
+        let mut new_addr = self.processor.pc + 3;
+        if should_jump {
+            let rel_address = offset as i8;
+            // println!("BPL Jumping offset {:?}", rel_address);
+            new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
+        }
+        self.processor.pc = new_addr;
+        self.processor.clock += 3; 
+    }
+
+    fn bbr(&mut self, num: u8) {
+        let offset = self.read(self.processor.pc + 2);
+        let zpa = self.read(self.processor.pc + 1);
+        let should_jump = (self.read(zpa as u16) >> num) & 1 == 0;
+        let mut new_addr = self.processor.pc + 3;
+        if should_jump {
+            let rel_address = offset as i32;
+            new_addr = ((new_addr as i32) + rel_address) as u16;
+        }
+        self.processor.pc = new_addr;
+        self.processor.clock += 3; 
     }
 
     /// Branch if negative flag is set
@@ -1688,8 +1755,8 @@ self.add_info(format!("{:#x} - Running instruction ora {:#x} with acc: {:#x} val
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction nop: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
-        if (self.processor.inst != 0xea) {
-            self.speed = 1000;
+        if self.processor.inst != 0xea && LOG_LEVEL > 1 {
+            self.speed = 10;
         }
         
         self.processor.pc += 1;

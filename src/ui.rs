@@ -18,7 +18,7 @@ use crate::app::Tab;
 
 
 /// Renders the user interface widgets.
-pub fn render<B: Backend>(app: &mut App, frame: &mut Frame<'_, B>) {
+pub fn render(app: &mut App, frame: &mut Frame) {
     // This is where you add new widgets.
     // See the following resources:
     // - https://docs.rs/ratatui/latest/ratatui/widgets/index.html
@@ -47,9 +47,7 @@ pub fn render<B: Backend>(app: &mut App, frame: &mut Frame<'_, B>) {
 
 }
 
-pub fn modal<'a, B>(f: &mut Frame<B>, title: Paragraph, text: Paragraph, buttons: Table, input: Option<Paragraph>) -> Rc<[Rect]>
-where
-    B: Backend,
+pub fn modal(f: &mut Frame, title: Paragraph, text: Paragraph, buttons: Table, input: Option<Paragraph>) -> Rc<[Rect]>
 {
     let area = Rect::new((f.size().width - 50) / 2, (f.size().height - 12) / 2, 50, 12);
     f.render_widget(Clear, area);

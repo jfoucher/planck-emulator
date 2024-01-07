@@ -64,6 +64,20 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
     let aaa = (opcode >> 5) & 7;
 
     match opcode {
+        0x02 => return "NOP2",
+        0x22 => return "NOP2",
+        0x42 => return "NOP2",
+        0x62 => return "NOP2",
+        0x82 => return "NOP2",
+        0xC2 => return "NOP2",
+        0xE2 => return "NOP2",
+        0x44 => return "NOP2",
+        0x54 => return "NOP2",
+        0xD4 => return "NOP2",
+        0xF4 => return "NOP2",
+        0x5C => return "NOP3",
+        0xDC => return "NOP3",
+        0xFC => return "NOP3",
         0x10 => return "BPL",
         0x30 => return "BMI",
         0x50 => return "BVC",
@@ -109,6 +123,24 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
         0xba => return "TSX",
         0xca => return "DEX",
         0xea => return "NOP",
+
+        0x0F => return "BBR0",
+        0x1F => return "BBR1",
+        0x2F => return "BBR2",
+        0x3F => return "BBR3",
+        0x4F => return "BBR4",
+        0x5F => return "BBR5",
+        0x6F => return "BBR6",
+        0x7F => return "BBR7",
+
+        0x8F => return "BBS0",
+        0x9F => return "BBS1",
+        0xAF => return "BBS2",
+        0xBF => return "BBS3",
+        0xCF => return "BBS4",
+        0xDF => return "BBS5",
+        0xEF => return "BBS6",
+        0xFF => return "BBS7",
 
         _ => {}
     }

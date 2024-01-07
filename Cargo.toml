@@ -14,7 +14,7 @@ exclude = [
 
 [dependencies]
 crossterm = "0.27.0"
-tui = { package = "ratatui", version = "0.23" }
+tui = { package = "ratatui", version = "0.25" }
 rand = "0.8.5"
-itertools = "0.11"
+itertools = "0.12"
 chrono = "0.4"

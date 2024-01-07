@@ -5,9 +5,7 @@ use tui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
 use crate::{app::App, button::Button};
 use crate::button::footer_button;
 
-pub fn draw_header<'a, B>(frame: &mut Frame<B>, app: &mut App, area: Rect)
-where
-    B: Backend,
+pub fn draw_header(frame: &mut Frame, app: &mut App, area: Rect)
 {
 
     let header = Layout::default()
@@ -40,9 +38,7 @@ where
 
 }
 
-pub fn draw_footer<'a, B>(f: &mut Frame<B>, area: Rect, buttons: Vec<Button>)
-where
-    B: Backend,
+pub fn draw_footer(f: &mut Frame, area: Rect, buttons: Vec<Button>)
 {
 
     let block = Block::new()
@@ -52,13 +48,13 @@ where
 
     f.render_widget(block, area);
 
-    let constraints: Vec<Constraint> = buttons.iter().map(|_| Constraint::Ratio(1, buttons.len() as u32)).collect();
+    let constraints = Constraint::from_ratios(buttons.iter().map(|_| (1 as u32, buttons.len() as u32)).into_iter());
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(0)
         .constraints(
-            constraints.as_ref(),
+            constraints,
         )
         .split(area);
 

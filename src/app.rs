@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ops::Add;
 use std::{error, fs};
 use std::fs::File;
@@ -47,7 +47,7 @@ pub struct App {
     pub running: bool,
     pub current_tab: Tab,
     pub line: String,
-    pub debug: String,
+    pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
     pub tx: Sender<computer::ControllerMessage>,
 
@@ -64,7 +64,7 @@ impl App {
         let computer_data = data.clone();
         let child = thread::spawn(move || {
             let mut computer = Computer::new(computer_tx, rx, computer_data);
-            computer.reset();
+            //computer.reset();
 
             loop {
                 computer.step();
@@ -75,7 +75,7 @@ impl App {
             running: true,
             current_tab: Tab::Main,
             line: String::from(""),
-            debug: String::from(""),
+            debug: VecDeque::new(),
             tx: tx,
             rx: computer_rx,
         }
@@ -88,7 +88,10 @@ impl App {
             // Handle messages arriving from the UI.
             match message {
                 ComputerMessage::Info(info) => {
-                    self.debug = info;
+                    self.debug.push_back(info);
+                    if self.debug.len() > 30 {
+                        self.debug.pop_front();
+                    }
                 }
                 _ => {}
             };
