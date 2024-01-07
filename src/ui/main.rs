@@ -59,8 +59,7 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         .constraints(
             [
                 Constraint::Min(6),     // debug output
-                Constraint::Length(1),     // title
-                Constraint::Length(10),
+                Constraint::Min(10),
                 Constraint::Max(1),     // Tab Footer
             ]
             .as_ref(),
@@ -74,4 +73,12 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         .wrap(Wrap { trim: false })
         ;
     f.render_widget(p, chunks[0]);    
+
+    let p = Paragraph::new(app.output.iter().join("\n"))
+        .block(Block::default()
+            .borders(Borders::NONE)
+        )
+        .wrap(Wrap { trim: false })
+        ;
+    f.render_widget(p, chunks[1]);    
 }

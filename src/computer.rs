@@ -9,10 +9,12 @@ pub struct Info {
     pub qty: u64,
 }
 
-const LOG_LEVEL:i16 = 1;
+const LOG_LEVEL:i16 = 0;
 
-const OUTPUT_BTM:u16 = 0xf000;
-const OUTPUT_TOP:u16 = 0xf100;
+const OUTPUT_START:u16 = 0xff00;
+const OUTPUT_END:u16 = 0xfff9;
+
+
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum ADRESSING_MODE {
@@ -28,8 +30,7 @@ pub enum ADRESSING_MODE {
     ZERO_PAGE_Y = 9,
     ACCUMULATOR = 10,
     ZERO_PAGE_INDIRECT = 11,
-    NONE = 12,
-    
+    NONE = 12,   
 }
 
 pub enum ControllerMessage {
@@ -38,6 +39,7 @@ pub enum ControllerMessage {
 
 pub enum ComputerMessage {
     Info(String),
+    Output(u8),
 }
 
 #[derive(Clone, Debug)]
@@ -128,16 +130,25 @@ impl Computer {
     }
 
     fn read(&mut self, addr: u16) -> u8 {
+        // Ignore IO
+        if addr >= OUTPUT_START && addr <= OUTPUT_END {
+            return 0;
+        }
         return self.data[addr as usize];
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        self.data[addr as usize] = value;
+        if addr == 0xFFE0 {
+            // let _ = self.tx.send(ComputerMessage::Info(format!("output {:?}", value)));
+            let _ = self.tx.send(ComputerMessage::Output(value));
+        } else {
+            self.data[addr as usize] = value;
+        }
     }
 
 
     pub fn reset(&mut self) {
-        self.processor.pc = self.get_word(0xfffe);
+        self.processor.pc = self.get_word(0xfffc);
     }
 
     fn run_instruction(&mut self) {

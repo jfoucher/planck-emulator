@@ -43,7 +43,7 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
             }
             match app.current_tab {
                 Tab::Main => {
-                    app.line.push(c)
+                    app.output_line.push(c)
                 },
                 _ => {
                     
@@ -53,7 +53,7 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
         KeyCode::Backspace => {
             match app.current_tab {
                 Tab::Main => {
-                    app.line.pop();
+                    app.output_line.pop();
                 },
                 _ => {},
             }

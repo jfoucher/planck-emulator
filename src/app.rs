@@ -46,7 +46,9 @@ pub struct App {
     /// Is the application running?
     pub running: bool,
     pub current_tab: Tab,
-    pub line: String,
+    pub input: String,
+    pub output_line: String,
+    pub output: VecDeque<String>,
     pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
     pub tx: Sender<computer::ControllerMessage>,
@@ -64,7 +66,7 @@ impl App {
         let computer_data = data.clone();
         let child = thread::spawn(move || {
             let mut computer = Computer::new(computer_tx, rx, computer_data);
-            //computer.reset();
+            computer.reset();
 
             loop {
                 computer.step();
@@ -74,7 +76,9 @@ impl App {
         Self {
             running: true,
             current_tab: Tab::Main,
-            line: String::from(""),
+            input: String::from(""),
+            output_line: String::from(""),
+            output: VecDeque::new(),
             debug: VecDeque::new(),
             tx: tx,
             rx: computer_rx,
@@ -92,6 +96,20 @@ impl App {
                     if self.debug.len() > 30 {
                         self.debug.pop_front();
                     }
+                }
+                ComputerMessage::Output(val) => {
+                    
+                    if val == 0x0D {
+                        let l = self.output_line.clone();
+                        self.output.push_back(l);
+                        self.output_line = String::from("");
+                        if self.debug.len() > 30 {
+                            self.debug.pop_front();
+                        }
+                    } else {
+                        self.output_line.push(val as char);
+                    }
+                    
                 }
                 _ => {}
             };
