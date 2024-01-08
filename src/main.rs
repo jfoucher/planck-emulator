@@ -16,11 +16,17 @@ fn main() -> AppResult<()> {
     let args: Vec<String> = env::args().collect();
     // Create an application.
     if args.len() < 2 {
-        println!("Usage: plu <rom.bin>");
+        println!("Usage: plu <rom.bin> [cfcard.img]");
         return Ok(());
     }
 
-    let mut app = App::new(args[1].clone());
+    let mut cf_file = None;
+
+    if (args.len() > 2) {
+        cf_file = Some(args[2].clone());
+    }
+
+    let mut app = App::new(args[1].clone(), cf_file);
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());

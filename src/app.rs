@@ -52,20 +52,23 @@ pub struct App {
     pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
     pub tx: Sender<computer::ControllerMessage>,
-
 }
 
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new(rom_file: String) -> Self {
+    pub fn new(rom_file: String, cf_file: Option<String>) -> Self {
         let data = fs::read(rom_file).expect("could not read file");
-        
+
+        let disk_data = match cf_file {
+            Some(d) => fs::read(d).expect("could not read file"),
+            None => vec![],
+        };
         let (tx, rx) = mpsc::channel::<computer::ControllerMessage>();
         let (computer_tx, computer_rx) = mpsc::channel::<computer::ComputerMessage>();
         let computer_data = data.clone();
         let child = thread::spawn(move || {
-            let mut computer = Computer::new(computer_tx, rx, computer_data);
+            let mut computer = Computer::new(computer_tx, rx, computer_data, disk_data);
             computer.reset();
 
             loop {

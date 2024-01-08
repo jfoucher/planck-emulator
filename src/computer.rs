@@ -42,6 +42,27 @@ pub enum ComputerMessage {
     Output(u8),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum DiskCommand {
+    Read = 0x20,
+    Write = 0x30,
+    None = 0,
+}
+
+impl TryFrom<u8> for DiskCommand {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            x if x == DiskCommand::Read as u8 => Ok(DiskCommand::Read),
+            x if x == DiskCommand::Write as u8 => Ok(DiskCommand::Write),
+            x if x == DiskCommand::None as u8 => Ok(DiskCommand::None),
+            _ => Err(()),
+        }
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct Processor {
     pub flags: u8,
@@ -61,8 +82,11 @@ pub struct Computer {
     processor: Processor,
     paused: bool,
     step: bool,
+    lba: u32,
+    command: DiskCommand,
     speed: u64,
     data: Vec<u8>,
+    disk: Vec<u8>,
     tx: mpsc::Sender<ComputerMessage>,
     rx: mpsc::Receiver<ControllerMessage>,
 }
@@ -73,17 +97,21 @@ const FLAG_D: u8 = 8;
 const FLAG_O: u8 = 0x40;
 const FLAG_N: u8 = 0x80;
 
-
+const CF_ADDRESS: u16 = 0xFFD0;
 
 impl Computer {
-    pub fn new(tx: mpsc::Sender<ComputerMessage>, rx:  mpsc::Receiver<ControllerMessage>, mut data: Vec<u8>) -> Computer {
+    pub fn new(tx: mpsc::Sender<ComputerMessage>, rx:  mpsc::Receiver<ControllerMessage>, mut data: Vec<u8>, disk: Vec<u8>) -> Computer {
         let rom_size = data.len();
         let mut ram: Vec<u8> = vec![0; 0x10000-rom_size];
         ram.fill(0);
         ram.append(&mut data);
 
+
         Self {
             data: ram,
+            disk,
+            lba: 0,
+            command: DiskCommand::None,
             tx,
             rx,
             paused: false,
@@ -131,15 +159,51 @@ impl Computer {
 
     fn read(&mut self, addr: u16) -> u8 {
         // Ignore IO
-        if addr >= OUTPUT_START && addr <= OUTPUT_END {
+        if self.disk.len() > 0 && (addr & CF_ADDRESS) > 0 {
+            let reg = addr & 7;
+            
+            if reg == 0 {
+                if self.command == DiskCommand::Read {
+                    let v = self.disk[self.lba as usize];
+                    self.lba += 1;
+                    return v;
+                }
+            } else if reg == 7 {
+                return 0x50;
+            }
+        } else if addr >= OUTPUT_START && addr <= OUTPUT_END {
             return 0;
         }
         return self.data[addr as usize];
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        if addr == 0xFFE0 {
-            // let _ = self.tx.send(ComputerMessage::Info(format!("output {:?}", value)));
+        if self.disk.len() > 0 && (addr & CF_ADDRESS) > 0 {
+            let reg = addr & 7;
+
+            if reg == 2 {
+                self.lba &= 0xFFFFFF00;
+                self.lba |= value as u32;
+            } else if reg == 3 {
+                self.lba &= 0xFFFF00FF;
+                self.lba |= (value as u32) << 8;
+            } else if reg == 4 {
+                self.lba &= 0xFF00FFFF;
+                self.lba |= (value as u32) << 16;
+            } else if reg == 5 {
+                self.lba &= 0x00FFFFFF;
+                self.lba |= ((value as u32) << 24) & 0xF;
+            } else if reg == 7 {
+                self.command = match value.try_into() {
+                    Ok(DiskCommand::Read) => DiskCommand::Read,
+                    Ok(DiskCommand::Write) => DiskCommand::Write,
+                    Ok(DiskCommand::None) => DiskCommand::None,
+                    Err(_) => DiskCommand::None,
+                }
+            }
+
+        } else if addr == 0xFFE0 {
+            // Serial out
             let _ = self.tx.send(ComputerMessage::Output(value));
         } else {
             self.data[addr as usize] = value;
@@ -655,7 +719,7 @@ impl Computer {
             let start = self.processor.pc + 1;
             let zp_addr = self.read(start);
             let base_addr = self.get_word(zp_addr.into());
-            let addr: u16 = base_addr + self.processor.ry as u16;
+            let addr: u16 = base_addr.wrapping_add(self.processor.ry as u16);
             if LOG_LEVEL > 2 {
                 self.add_info(format!("{:#x} - Getting INDIRECT_Y address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
