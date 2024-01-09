@@ -58,8 +58,9 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         .margin(0)
         .constraints(
             [
-                Constraint::Min(6),     // debug output
-                Constraint::Min(10),
+                Constraint::Length(20),     // debug output
+                Constraint::Max(1),     // Tab Footer
+                Constraint::Length(20),
                 Constraint::Max(1),     // Tab Footer
             ]
             .as_ref(),
@@ -74,11 +75,19 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         ;
     f.render_widget(p, chunks[0]);    
 
+    let p = Paragraph::new("OUTPUT")
+        .block(Block::default()
+            .borders(Borders::NONE)
+        )
+        .wrap(Wrap { trim: false })
+        ;
+    f.render_widget(p, chunks[1]);       
+
     let p = Paragraph::new(app.output.iter().join("\n"))
         .block(Block::default()
             .borders(Borders::NONE)
         )
         .wrap(Wrap { trim: false })
         ;
-    f.render_widget(p, chunks[1]);    
+    f.render_widget(p, chunks[2]);    
 }

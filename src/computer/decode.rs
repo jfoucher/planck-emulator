@@ -15,6 +15,26 @@ pub fn get_adressing_mode(opcode: u8) -> ADRESSING_MODE {
     if opcode == 0x7C {
         return ADRESSING_MODE::INDIRECT_X;
     }
+    
+    if opcode == 0x89 {
+        return ADRESSING_MODE::IMMEDIATE;
+    }
+    
+    if opcode == 0x64 {
+        return ADRESSING_MODE::ZERO_PAGE;
+    }
+    
+    if opcode == 0x9C {
+        return ADRESSING_MODE::ABSOLUTE;
+    }
+    
+    if opcode == 0x74 {
+        return ADRESSING_MODE::ZERO_PAGE_X;
+    }
+    
+    if opcode == 0x9E {
+        return ADRESSING_MODE::ABSOLUTE_X;
+    }
 
     match cc {
         0 => {
@@ -141,6 +161,13 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
         0xDF => return "BBS5",
         0xEF => return "BBS6",
         0xFF => return "BBS7",
+
+        0x64 => return "STZ",
+        0x9C => return "STZ",
+        0x74 => return "STZ",
+        0x9E => return "STZ",
+
+        0x89 => return "BIT",
 
         _ => {}
     }

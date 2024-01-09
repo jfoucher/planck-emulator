@@ -83,6 +83,7 @@ pub struct Computer {
     paused: bool,
     step: bool,
     lba: u32,
+    disk_cnt: u16,
     command: DiskCommand,
     speed: u64,
     data: Vec<u8>,
@@ -111,6 +112,7 @@ impl Computer {
             data: ram,
             disk,
             lba: 0,
+            disk_cnt: 0,
             command: DiskCommand::None,
             tx,
             rx,
@@ -159,16 +161,23 @@ impl Computer {
 
     fn read(&mut self, addr: u16) -> u8 {
         // Ignore IO
-        if self.disk.len() > 0 && (addr & CF_ADDRESS) > 0 {
+        if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
             let reg = addr & 7;
-            
+            let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
             if reg == 0 {
                 if self.command == DiskCommand::Read {
-                    let v = self.disk[self.lba as usize];
-                    self.lba += 1;
+                    let v = self.disk[(self.lba + self.disk_cnt as u32) as usize];
+                    self.disk_cnt += 1;
+                    if self.disk_cnt > 512 {
+                        self.command = DiskCommand::None;
+                    }
                     return v;
                 }
+                return 0;
             } else if reg == 7 {
+                if self.command != DiskCommand::None {
+                    return 0x58;
+                }
                 return 0x50;
             }
         } else if addr >= OUTPUT_START && addr <= OUTPUT_END {
@@ -178,10 +187,19 @@ impl Computer {
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        if self.disk.len() > 0 && (addr & CF_ADDRESS) > 0 {
+        if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
+            
             let reg = addr & 7;
-
-            if reg == 2 {
+            let _ = self.tx.send(ComputerMessage::Info(format!("disk write {:?} {:#x}", reg, value)));
+            if reg == 0 {
+                if self.command == DiskCommand::Write {
+                    self.disk[(self.lba + self.disk_cnt as u32) as usize] = value;
+                    self.disk_cnt += 1;
+                    if self.disk_cnt > 512 {
+                        self.command = DiskCommand::None;
+                    }
+                }
+            } else if reg == 2 {
                 self.lba &= 0xFFFFFF00;
                 self.lba |= value as u32;
             } else if reg == 3 {
@@ -195,11 +213,13 @@ impl Computer {
                 self.lba |= ((value as u32) << 24) & 0xF;
             } else if reg == 7 {
                 self.command = match value.try_into() {
-                    Ok(DiskCommand::Read) => DiskCommand::Read,
-                    Ok(DiskCommand::Write) => DiskCommand::Write,
-                    Ok(DiskCommand::None) => DiskCommand::None,
+                    Ok(c) => c,
                     Err(_) => DiskCommand::None,
-                }
+                };
+                // set count of bytes in sector to zero
+                self.disk_cnt = 0;
+                let _ = self.tx.send(ComputerMessage::Info(format!("disk command {:?}", self.command)));
+
             }
 
         } else if addr == 0xFFE0 {
@@ -302,6 +322,8 @@ impl Computer {
             "BBR5" => self.bbr(5),
             "BBR6" => self.bbr(6),
             "BBR7" => self.bbr(7),
+
+            "STZ" => self.stz(),
 
             "NOP2" => {
                 self.nop();
@@ -750,7 +772,7 @@ impl Computer {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction inc ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
-            self.processor.pc += 2;
+            self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 5;
         } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
             value = self.read(addr);
@@ -1319,6 +1341,25 @@ impl Computer {
         self.processor.clock += 5;
     }
 
+    fn stz(&mut self) {
+        let addressing_mode = decode::get_adressing_mode(self.processor.inst);
+
+        let mut pc = self.processor.pc;
+
+        if addressing_mode == ADRESSING_MODE::ZERO_PAGE_X || addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+            pc += 2;
+        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+            pc += 3;
+        }
+
+        let addr = self.get_ld_adddr(addressing_mode);
+
+        self.write(addr, 0);
+
+        self.processor.pc = pc;
+        self.processor.clock += 5;
+    }
+
     fn stx(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mut pc = 2;
@@ -1807,7 +1848,7 @@ impl Computer {
             self.speed = 10;
         }
         
-        self.processor.pc += 1;
+        self.processor.pc = self.processor.pc.wrapping_add(1);
         self.processor.clock += 2;
         
     }

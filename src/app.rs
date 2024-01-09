@@ -47,7 +47,6 @@ pub struct App {
     pub running: bool,
     pub current_tab: Tab,
     pub input: String,
-    pub output_line: String,
     pub output: VecDeque<String>,
     pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
@@ -76,14 +75,16 @@ impl App {
             }
         });
 
+        let mut output = VecDeque::new();
+        output.push_back(String::from(""));
+
         Self {
             running: true,
             current_tab: Tab::Main,
             input: String::from(""),
-            output_line: String::from(""),
-            output: VecDeque::new(),
+            output,
             debug: VecDeque::new(),
-            tx: tx,
+            tx,
             rx: computer_rx,
         }
     }
@@ -96,21 +97,23 @@ impl App {
             match message {
                 ComputerMessage::Info(info) => {
                     self.debug.push_back(info);
-                    if self.debug.len() > 30 {
+                    if self.debug.len() > 20 {
                         self.debug.pop_front();
                     }
                 }
                 ComputerMessage::Output(val) => {
                     
                     if val == 0x0D {
-                        let l = self.output_line.clone();
-                        self.output.push_back(l);
-                        self.output_line = String::from("");
-                        if self.debug.len() > 30 {
-                            self.debug.pop_front();
+                        self.output.push_back(String::from(""));
+                        if self.output.len() > 20 {
+                            self.output.pop_front();
                         }
                     } else {
-                        self.output_line.push(val as char);
+                        if let Some(mut l) = self.output.pop_back() {
+                            l.push(val as char);
+                            self.output.push_back(l);
+                        }
+                        
                     }
                     
                 }
