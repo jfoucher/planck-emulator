@@ -9,7 +9,7 @@ pub struct Info {
     pub qty: u64,
 }
 
-const LOG_LEVEL:i16 = 1;
+const LOG_LEVEL:i16 = 0;
 
 const OUTPUT_START:u16 = 0xff00;
 const OUTPUT_END:u16 = 0xfff9;
@@ -163,12 +163,14 @@ impl Computer {
         // Ignore IO
         if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
             let reg = addr & 7;
-            let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
+            // let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
             if reg == 0 {
                 if self.command == DiskCommand::Read {
-                    let v = self.disk[(self.lba + self.disk_cnt as u32) as usize];
+                    let v = self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize];
+                    //let _ = self.tx.send(ComputerMessage::Info(format!("read disk {:?} {:?} {:?}, {:#x}", self.lba, self.disk_cnt, (self.lba * 512 + self.disk_cnt as u32), v)));
+
                     self.disk_cnt += 1;
-                    if self.disk_cnt > 512 {
+                    if self.disk_cnt >= 512 {
                         self.command = DiskCommand::None;
                     }
                     return v;
@@ -193,22 +195,24 @@ impl Computer {
             let _ = self.tx.send(ComputerMessage::Info(format!("disk write {:?} {:#x}", reg, value)));
             if reg == 0 {
                 if self.command == DiskCommand::Write {
-                    self.disk[(self.lba + self.disk_cnt as u32) as usize] = value;
+                    self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
                     self.disk_cnt += 1;
-                    if self.disk_cnt > 512 {
+                    if self.disk_cnt >= 512 {
                         self.command = DiskCommand::None;
                     }
                 }
             } else if reg == 2 {
+                // TODO set number of sectors to read
+            } else if reg == 3 {
                 self.lba &= 0xFFFFFF00;
                 self.lba |= value as u32;
-            } else if reg == 3 {
+            } else if reg == 4 {
                 self.lba &= 0xFFFF00FF;
                 self.lba |= (value as u32) << 8;
-            } else if reg == 4 {
+            } else if reg == 5 {
                 self.lba &= 0xFF00FFFF;
                 self.lba |= (value as u32) << 16;
-            } else if reg == 5 {
+            } else if reg == 6 {
                 self.lba &= 0x00FFFFFF;
                 self.lba |= ((value as u32) << 24) & 0xF;
             } else if reg == 7 {
@@ -216,8 +220,11 @@ impl Computer {
                     Ok(c) => c,
                     Err(_) => DiskCommand::None,
                 };
-                // set count of bytes in sector to zero
-                self.disk_cnt = 0;
+                if self.command != DiskCommand::None {
+                    // set count of bytes in sector to zero
+                    self.disk_cnt = 0;
+                }
+                
                 let _ = self.tx.send(ComputerMessage::Info(format!("disk command {:?}", self.command)));
 
             }
@@ -1138,14 +1145,14 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction bit val: {:#x} result: {:#x}", self.processor.pc, value, result));
         }
-        if addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+        if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::IMMEDIATE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
             self.processor.pc += 2;
-            self.processor.clock += 2;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE {
+            self.processor.clock += 3;
+        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X{
             self.processor.pc += 3;
             self.processor.clock += 4;
         } else {
-            panic!("Sorry, this adressing mode does not exist for this instruction")
+            panic!("Sorry, the adressing mode {:?} does not exist for instruction {:#x}", addressing_mode, self.processor.inst)
         }
 
         if result == 0 {
@@ -1673,16 +1680,16 @@ impl Computer {
     fn after_logical_op(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         if addressing_mode == ADRESSING_MODE::IMMEDIATE {
-            self.processor.pc += 2;
+            self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 2;
         } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
-            self.processor.pc += 2;
+            self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 3;
         } else if addressing_mode == ADRESSING_MODE::INDIRECT_X || addressing_mode == ADRESSING_MODE::INDIRECT_Y {
-            self.processor.pc += 2;
+            self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 6;
         } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
-            self.processor.pc += 3;
+            self.processor.pc = self.processor.pc.wrapping_add(4);
             self.processor.clock += 4;
         } else {
             if LOG_LEVEL > 0 {
