@@ -170,7 +170,7 @@ impl Computer {
                     //let _ = self.tx.send(ComputerMessage::Info(format!("read disk {:?} {:?} {:?}, {:#x}", self.lba, self.disk_cnt, (self.lba * 512 + self.disk_cnt as u32), v)));
 
                     self.disk_cnt += 1;
-                    if self.disk_cnt >= 512 {
+                    if self.disk_cnt > 512 {
                         self.command = DiskCommand::None;
                     }
                     return v;
@@ -197,7 +197,7 @@ impl Computer {
                 if self.command == DiskCommand::Write {
                     self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
                     self.disk_cnt += 1;
-                    if self.disk_cnt >= 512 {
+                    if self.disk_cnt > 512 {
                         self.command = DiskCommand::None;
                     }
                 }
@@ -799,7 +799,7 @@ impl Computer {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction inc ABS with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
-            self.processor.pc += 3;
+            self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock += 6;
         }
 
@@ -1337,7 +1337,7 @@ impl Computer {
             }
 
             pc += 3;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X || addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y {
+        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X || addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y || addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction sta ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
@@ -1350,11 +1350,12 @@ impl Computer {
 
             pc += 2;
         } else {
-            panic!("This adressing mode is not implemented yet, sorry");
+            panic!("Adressing mode {:?} not implemented for STA", addressing_mode);
         }
         self.write(addr, self.processor.acc);
 
         self.processor.pc = pc;
+        // Todo correct this
         self.processor.clock += 5;
     }
 
@@ -1892,7 +1893,7 @@ impl Computer {
 
     pub fn get_word(&mut self, address: u16) -> u16 {
         let low_byte: u16 = self.read(address).into();
-        let high_byte: u16 = self.read(address + 1).into();
+        let high_byte: u16 = self.read(address.wrapping_add(1)).into();
         return low_byte + (high_byte << 8);
     }
 }
