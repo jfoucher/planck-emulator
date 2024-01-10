@@ -31,6 +31,11 @@ pub fn get_adressing_mode(opcode: u8) -> ADRESSING_MODE {
     if opcode == 0x74 {
         return ADRESSING_MODE::ZERO_PAGE_X;
     }
+
+
+    if opcode == 0x12 || opcode == 0x32 || opcode == 0x52 || opcode == 0x72 || opcode == 0x92 || opcode == 0xB2 || opcode == 0xD2 || opcode == 0xF2 {
+        return ADRESSING_MODE::ZERO_PAGE_INDIRECT;
+    }
     
     if opcode == 0x9E {
         return ADRESSING_MODE::ABSOLUTE_X;
@@ -85,6 +90,14 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
 
     match opcode {
         0x02 => return "NOP2",
+        0x12 => return "ORA",
+        0x32 => return "AND",
+        0x52 => return "EOR",
+        0x72 => return "ADC",
+        0x92 => return "STA",
+        0xB2 => return "LDA",
+        0xD2 => return "CMP",
+        0xF2 => return "SBC",
         0x22 => return "NOP2",
         0x42 => return "NOP2",
         0x62 => return "NOP2",

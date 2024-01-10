@@ -9,7 +9,7 @@ pub struct Info {
     pub qty: u64,
 }
 
-const LOG_LEVEL:i16 = 0;
+const LOG_LEVEL:i16 = 1;
 
 const OUTPUT_START:u16 = 0xff00;
 const OUTPUT_END:u16 = 0xfff9;
@@ -756,7 +756,20 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting INDIRECT_X address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
             return addr;
+        } else if addressing_mode == ADRESSING_MODE::ACCUMULATOR {
+            // Address ignored
+            return 0;
+        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
+            let start = self.processor.pc + 1;
+            let zp_addr = self.read(start);
+            let addr: u16 = self.get_word(zp_addr.into());
+            if LOG_LEVEL > 2 {
+                self.add_info(format!("{:#x} - Getting ZERO_PAGE_INDIRECT address from: {:#x} with zp addr: {:#x} gives: {:#x}", self.processor.pc, start, zp_addr, addr));
+            }
+            return addr;
         }
+
+        panic!("unknown addressing mode {:?} {:#x}", addressing_mode, self.processor.inst);
 
         return 0;
     }
@@ -893,34 +906,31 @@ impl Computer {
         let addr = self.get_ld_adddr(mode);
         if addressing_mode == ADRESSING_MODE::IMMEDIATE {
             value = self.read(addr);
-            if LOG_LEVEL > 0 {
-                self.add_info(format!("{:#x} - Running instruction lda val: {:#x}", self.processor.pc, value));
-            }
+            
             self.processor.pc += 2;
             self.processor.clock += 2;
         } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X|| addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
             value = self.read(addr);
-            if LOG_LEVEL > 0 {
-                self.add_info(format!("{:#x} - Running instruction lda absolute with addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
-            }
             self.processor.pc += 3;
             self.processor.clock += 4;
         } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
             value = self.read(addr);
-            if LOG_LEVEL > 0 {
-                self.add_info(format!("{:#x} - Running instruction lda ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
-            }
             self.processor.pc += 2;
             self.processor.clock += 3;
         } else if addressing_mode == ADRESSING_MODE::INDIRECT_Y || addressing_mode == ADRESSING_MODE::INDIRECT_X {
             value = self.read(addr);
-            if LOG_LEVEL > 0 {
-                self.add_info(format!("{:#x} - Running instruction lda INDIRECT with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
-            }
+            self.processor.pc += 2;
+            self.processor.clock += 5;
+        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
+            value = self.read(addr);
             self.processor.pc += 2;
             self.processor.clock += 5;
         } else {
             panic!("This adressing mode is not implemented yet, sorry");
+        }
+
+        if LOG_LEVEL > 0 {
+            self.add_info(format!("{:#x} - Running instruction lda {:?} addr: {:#x} val: {:#x}", self.processor.pc, addressing_mode, addr, value));
         }
         
         self.processor.acc = value;
