@@ -20,11 +20,29 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
         KeyCode::F(1) => {
             app.current_tab = match app.current_tab {
                 Tab::Main => Tab::Help,
+                Tab::Memory => Tab::Help,
                 Tab::Help => Tab::Main,
             }
         }
         KeyCode::F(2) => {
             app.quit();
+        }
+
+        KeyCode::F(3) => {
+            app.current_tab = match app.current_tab {
+                Tab::Main => Tab::Memory,
+                Tab::Memory => Tab::Main,
+                Tab::Help => Tab::Main,
+            }
+        }
+
+        KeyCode::F(4) => {
+            match app.current_tab {
+                Tab::Memory | Tab::Main => {
+                    let _ = app.tx.send(crate::computer::ControllerMessage::Reset);
+                },
+                _ => {}
+            }
         }
         
         KeyCode::Enter => {
@@ -34,7 +52,46 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                 },
                 _ => {},
             }
-            
+        }
+        
+        KeyCode::Up => {
+            match app.current_tab {
+                Tab::Memory => {
+                    app.memory_scroll = app.memory_scroll.saturating_sub(1);
+                    app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                _ => {},
+            }
+        }
+        
+        KeyCode::Down => {
+            match app.current_tab {
+                Tab::Memory => {
+                    app.memory_scroll = app.memory_scroll.saturating_add(1);
+                    app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                _ => {},
+            }
+        }
+        
+        KeyCode::PageUp => {
+            match app.current_tab {
+                Tab::Memory => {
+                    app.memory_scroll = app.memory_scroll.saturating_sub(16);
+                    app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                _ => {},
+            }
+        }
+        
+        KeyCode::PageDown => {
+            match app.current_tab {
+                Tab::Memory => {
+                    app.memory_scroll = app.memory_scroll.saturating_add(16);
+                    app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                _ => {},
+            }
         }
 
         KeyCode::Char(c) => {

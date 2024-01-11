@@ -1,10 +1,11 @@
 pub mod header;
 pub mod main;
+pub mod memory;
 
 pub mod stateful_list;
 use std::rc::Rc;
 
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Alignment, Rect, Layout, Direction, Constraint},
     style::{Color, Style, Modifier, Stylize},
@@ -39,6 +40,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     match app.current_tab {
         Tab::Main => main::draw_main_tab(frame, app, chunks[1]),
         Tab::Help => main::draw_main_help(frame, app, chunks[1]),
+        Tab::Memory => memory::draw_main_tab(frame, app, chunks[1]),
         _ => {}
     }
 

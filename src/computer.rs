@@ -35,11 +35,16 @@ pub enum ADRESSING_MODE {
 
 pub enum ControllerMessage {
     ButtonPressed(String),
+    GetMemory,
+    GetProc,
+    Reset,
 }
 
 pub enum ComputerMessage {
     Info(String),
     Output(u8),
+    Memory(Vec<u8>),
+    Processor(Processor)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -71,8 +76,6 @@ pub struct Processor {
     pub ry: u8,
     pub pc: u16,
     pub sp: u8,
-    pub test: Vec<u8>,
-    pub info: Vec<Info>,
     pub clock: u64,
     pub inst: u8,
 }
@@ -90,6 +93,7 @@ pub struct Computer {
     disk: Vec<u8>,
     tx: mpsc::Sender<ComputerMessage>,
     rx: mpsc::Receiver<ControllerMessage>,
+    pub info: Vec<Info>,
 }
 const FLAG_C: u8 = 1;
 const FLAG_Z: u8 = 2;
@@ -119,6 +123,7 @@ impl Computer {
             paused: false,
             step: false,
             speed: 0,
+            info: vec![],
             processor: Processor {
                 flags: 0b00110000,
                 acc: 0,
@@ -127,8 +132,7 @@ impl Computer {
                 /// Start at 0x400
                 pc: 0x400,
                 sp: 0,
-                test: vec![],
-                info: vec![],
+                
                 clock: 0,
                 inst: 0xea,
             }
@@ -139,6 +143,15 @@ impl Computer {
         while let Some(message) = self.rx.try_iter().next() {
             // Handle messages arriving from the controller.
             match message {
+                ControllerMessage::GetMemory => {
+                    let _ = self.tx.send(ComputerMessage::Memory(self.data.clone()));
+                }
+                ControllerMessage::GetProc => {
+                    let _ = self.tx.send(ComputerMessage::Processor(self.processor.clone()));
+                }
+                ControllerMessage::Reset => {
+                    self.reset();
+                }
                 _ => {},
             };
         }
@@ -232,14 +245,20 @@ impl Computer {
         } else if addr == 0xFFE0 {
             // Serial out
             let _ = self.tx.send(ComputerMessage::Output(value));
-        } else {
-            self.data[addr as usize] = value;
         }
+
+        self.data[addr as usize] = value;
+        
     }
 
 
     pub fn reset(&mut self) {
+        self.paused = true;
+        self.lba = 0;
+        self.disk_cnt = 0;
+        self.command = DiskCommand::None;
         self.processor.pc = self.get_word(0xfffc);
+        self.paused = false;
     }
 
     fn run_instruction(&mut self) {
@@ -352,14 +371,14 @@ impl Computer {
 
     fn add_info(&mut self, info: String) {
         let _ = self.tx.send(ComputerMessage::Info(info.clone()));
-        let len = self.processor.info.len();
-        if len > 0 && self.processor.info[len-1].msg == info {
-            let last_element = self.processor.info.pop().unwrap();
-            self.processor.info.push(Info {msg: info, qty: last_element.qty + 1});
+        let len = self.info.len();
+        if len > 0 && self.info[len-1].msg == info {
+            let last_element = self.info.pop().unwrap();
+            self.info.push(Info {msg: info, qty: last_element.qty + 1});
             self.paused = true;
             let _ = self.tx.send(ComputerMessage::Info(String::from("Computer paused")));
         } else {
-            self.processor.info.push(Info {msg: info, qty: 1});
+            self.info.push(Info {msg: info, qty: 1});
         }
 
     }
@@ -702,9 +721,9 @@ impl Computer {
             let start = self.processor.pc + 1;
             let start_addr = self.get_word(start);
             let rx = self.processor.rx;
-            let addr: u16 = start_addr + (rx as u16);
+            let addr: u16 = start_addr.wrapping_add(rx.into());
             if LOG_LEVEL > 2 {
-                self.add_info(format!("{:#x} - Getting absolute_x address from: {:#x} ry: {:#x} gives: {:#x}", self.processor.pc, start_addr, rx, addr));
+                self.add_info(format!("{:#x} - Getting absolute_x address from: {:#x} rx: {:#x} gives: {:#x}", self.processor.pc, start_addr, rx, addr));
             }
             return addr;
         } else if addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
@@ -712,7 +731,7 @@ impl Computer {
             let start = self.processor.pc + 1;
             let start_addr = self.get_word(start);
             let ry = self.processor.ry;
-            let addr: u16 = start_addr + (ry as u16);
+            let addr: u16 = start_addr.wrapping_add(ry.into());
             if LOG_LEVEL > 2 {
                 self.add_info(format!("{:#x} - Getting absolute_y address from: {:#x} ry: {:#x} gives: {:#x}", self.processor.pc, start_addr, ry, addr));
             }
@@ -1178,7 +1197,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction inx: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.rx, self.processor.flags));
         }
-        self.processor.pc += 1;
+        self.processor.pc = self.processor.pc.wrapping_add(1);
         self.processor.clock += 2;
     }
 
@@ -1188,7 +1207,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction iny: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.ry, self.processor.flags));
         }
-        self.processor.pc += 1;
+        self.processor.pc = self.processor.pc.wrapping_add(1);
         self.processor.clock += 2;
     }
 
@@ -1198,7 +1217,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction dex: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.rx, self.processor.flags));
         }
-        self.processor.pc += 1;
+        self.processor.pc = self.processor.pc.wrapping_add(1);
         self.processor.clock += 2;
     }
 
@@ -1208,7 +1227,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction dey: {:#x} new val: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], self.processor.ry));
         }
-        self.processor.pc += 1;
+        self.processor.pc = self.processor.pc.wrapping_add(1);
         self.processor.clock += 2;
     }
 
@@ -1690,7 +1709,7 @@ impl Computer {
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 6;
         } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
-            self.processor.pc = self.processor.pc.wrapping_add(4);
+            self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock += 4;
         } else {
             if LOG_LEVEL > 0 {

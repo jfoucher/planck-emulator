@@ -1,4 +1,4 @@
-use tui::{text::{Line, Span}, style::{Style, Color, Modifier}};
+use ratatui::{text::{Line, Span}, style::{Style, Color, Modifier}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Button {

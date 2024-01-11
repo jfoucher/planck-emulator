@@ -5,18 +5,19 @@ use std::fs::File;
 use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::time::Duration;
-use tui::widgets::ScrollbarState;
+use ratatui::widgets::ScrollbarState;
 use std::thread::{self, JoinHandle};
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 
-use crate::computer::{self, Computer, ComputerMessage};
+use crate::computer::{self, Computer, ComputerMessage, Processor};
 use crate::ui::stateful_list::StatefulList;
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tab {
     Main,
+    Memory,
     Help,
 }
 
@@ -51,6 +52,10 @@ pub struct App {
     pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
     pub tx: Sender<computer::ControllerMessage>,
+    pub memory_scroll_state: ScrollbarState,
+    pub memory_scroll: usize,
+    pub mem: Vec<u8>,
+    pub processor: Processor,
 }
 
 
@@ -86,12 +91,30 @@ impl App {
             debug: VecDeque::new(),
             tx,
             rx: computer_rx,
+            memory_scroll_state: ScrollbarState::default(),
+            memory_scroll: 0,
+            mem: vec![],
+            processor: Processor {
+                flags: 0b00110000,
+                acc: 0,
+                rx: 0,
+                ry: 0,
+                pc: 0x400,
+                sp: 0,
+                clock: 0,
+                inst: 0xea,
+            }
         }
     }
 
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {
+        if self.current_tab == Tab::Memory {
+            let _ = self.tx.send(computer::ControllerMessage::GetMemory);
+            let _ = self.tx.send(computer::ControllerMessage::GetProc);
+        }
+        
         while let Some(message) = self.rx.try_iter().next() {
             // Handle messages arriving from the UI.
             match message {
@@ -100,6 +123,14 @@ impl App {
                     if self.debug.len() > 20 {
                         self.debug.pop_front();
                     }
+                }
+
+                ComputerMessage::Memory(mem) => {
+                    self.mem = mem;
+                }
+
+                ComputerMessage::Processor(proc) => {
+                    self.processor = proc;
                 }
                 ComputerMessage::Output(val) => {
                     

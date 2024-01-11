@@ -1,6 +1,6 @@
 
 
-use tui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
+use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
 
 use crate::{app::App, button::Button};
 use crate::button::footer_button;

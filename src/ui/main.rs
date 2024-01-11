@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use chrono::{DateTime, Local};
 
 use itertools::Itertools;
-use tui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders, Wrap, ListItem, List, Table, Row, Padding}};
+use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders, Wrap, ListItem, List, Table, Row, Padding}};
 
 
 use crate::{app::{App, InputMode}, button::{Button, action_button}};
@@ -44,6 +44,7 @@ pub fn draw_main_help(f: &mut Frame, app: &mut App, area: Rect)
     let buttons = vec![
         Button::new("Close".to_string(), Some("1".to_string())),
         Button::new("Quit".to_string(), Some("2".to_string())),
+        Button::new("Memory".to_string(), Some("3".to_string())),
     ];
     header::draw_footer(f, chunks[1], buttons);
 
@@ -89,5 +90,15 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         )
         .wrap(Wrap { trim: false })
         ;
-    f.render_widget(p, chunks[2]);    
+    f.render_widget(p, chunks[2]);   
+
+    let buttons = vec![
+        Button::new("Help".to_string(), Some("1".to_string())),
+        Button::new("Quit".to_string(), Some("2".to_string())),
+        Button::new("Memory".to_string(), Some("3".to_string())),
+
+        Button::new("Reset".to_string(), Some("4".to_string())),
+    ];
+
+    header::draw_footer(f, chunks[3], buttons); 
 }

@@ -8,8 +8,8 @@ use plu::tui::Tui;
 
 use std::{io, env};
 
-use tui::backend::CrosstermBackend;
-use tui::Terminal;
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 
 
 fn main() -> AppResult<()> {
