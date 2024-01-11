@@ -20,6 +20,10 @@ pub fn get_adressing_mode(opcode: u8) -> AdressingMode {
         return AdressingMode::Immediate;
     }
     
+    if opcode == 0x1A || opcode == 0x3A {
+        return AdressingMode::Accumulator;
+    }
+    
     if opcode == 0x64 {
         return AdressingMode::ZeroPage;
     }
@@ -69,7 +73,7 @@ pub fn get_adressing_mode(opcode: u8) -> AdressingMode {
             match bbb {
                 0b000	=> return AdressingMode::Immediate,
                 0b001	=> return AdressingMode::ZeroPage,
-                0b010	=> return AdressingMode::ACCUMULATOR,
+                0b010	=> return AdressingMode::Accumulator,
                 0b011	=> return AdressingMode::Absolute,
                 0b101	=> if decode::get_opcode_name(opcode) == "STX" || decode::get_opcode_name(opcode) == "LDX" { return AdressingMode::ZeroPageY } else { return AdressingMode::ZeroPageX },
                 0b111	=> if decode::get_opcode_name(opcode) == "LDX" { return AdressingMode::AbsoluteY } else { return AdressingMode::AbsoluteX },

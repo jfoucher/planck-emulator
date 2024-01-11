@@ -28,7 +28,7 @@ pub enum AdressingMode {
     IndirectY = 7,
     Indirect = 8,
     ZeroPageY = 9,
-    ACCUMULATOR = 10,
+    Accumulator = 10,
     ZeroPageIndirect = 11,
     None = 12,   
 }
@@ -204,7 +204,7 @@ impl Computer {
         if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
             
             let reg = addr & 7;
-            let _ = self.tx.send(ComputerMessage::Info(format!("disk write {:?} {:#x}", reg, value)));
+            //let _ = self.tx.send(ComputerMessage::Info(format!("disk write {:?} {:#x}", reg, value)));
             if reg == 0 {
                 if self.command == DiskCommand::Write {
                     self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
@@ -237,7 +237,7 @@ impl Computer {
                     self.disk_cnt = 0;
                 }
                 
-                let _ = self.tx.send(ComputerMessage::Info(format!("disk command {:?}", self.command)));
+                //let _ = self.tx.send(ComputerMessage::Info(format!("disk command {:?}", self.command)));
 
             }
 
@@ -781,7 +781,7 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting Indirect_X address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
             return addr;
-        } else if addressing_mode == AdressingMode::ACCUMULATOR {
+        } else if addressing_mode == AdressingMode::Accumulator {
             // Address ignored
             return 0;
         } else if addressing_mode == AdressingMode::ZeroPageIndirect {
@@ -793,13 +793,15 @@ impl Computer {
             }
             return addr;
         }
+        self.add_info(format!("unknown addressing mode {:?} {:#x}", addressing_mode, self.processor.inst));
 
-        panic!("unknown addressing mode {:?} {:#x}", addressing_mode, self.processor.inst);
+        self.paused = true;
+        0
     }
 
     fn inc(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
-        let mut value: u8 = 0;
+        let mut value: u8 = self.processor.acc;
         let mode = addressing_mode;
 
         let addr = self.get_ld_adddr(mode);
@@ -828,7 +830,7 @@ impl Computer {
 
     fn dec(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
-        let mut value: u8 = 0;
+        let mut value: u8 = self.processor.acc;
         let mode = addressing_mode;
 
         let addr = self.get_ld_adddr(mode);
@@ -969,7 +971,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction asl {:?} with effective addr: {:#x}", self.processor.pc, mode, addr));
         }
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
@@ -999,7 +1001,7 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
@@ -1012,7 +1014,7 @@ impl Computer {
 
         let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             value = self.processor.acc;
         } else {
             value = self.read(addr);
@@ -1038,7 +1040,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction lsr val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             self.processor.pc += 1;
             self.processor.clock += 2;
             self.processor.acc = result;
@@ -1061,7 +1063,7 @@ impl Computer {
 
         let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
@@ -1095,7 +1097,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction rol val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
@@ -1108,7 +1110,7 @@ impl Computer {
 
         let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
@@ -1142,7 +1144,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction ror val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == AdressingMode::ACCUMULATOR {
+        if mode == AdressingMode::Accumulator {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
