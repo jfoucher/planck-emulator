@@ -1,4 +1,4 @@
-use crate::{app::{App, AppResult, Tab, InputMode}};
+use crate::{app::{App, AppResult, Tab}};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Handles the key events and updates the state of [`App`].

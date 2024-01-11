@@ -5,7 +5,7 @@ use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
 use crate::{app::App, button::Button};
 use crate::button::footer_button;
 
-pub fn draw_header(frame: &mut Frame, app: &mut App, area: Rect)
+pub fn draw_header(frame: &mut Frame, _: &mut App, area: Rect)
 {
 
     let header = Layout::default()

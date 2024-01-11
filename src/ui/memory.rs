@@ -1,13 +1,8 @@
-use std::time::SystemTime;
-
-use chrono::{DateTime, Local};
-
 use itertools::Itertools;
-use ratatui::{layout::Constraint::*, prelude::*, widgets::*};
+use ratatui::{prelude::*, widgets::*};
 
-use crate::{app::{App, InputMode}, button::{Button, action_button}};
+use crate::{app::App, button::Button};
 use crate::ui::header;
-use super::modal;
 
 
 pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
@@ -82,7 +77,7 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         ;
     f.render_widget(p, sides[2]);   
 
-    let mut ascii: Vec<Line> = app.mem.chunks(16).map(|c| c.as_ref().iter()).enumerate().map(|(i, x)| {
+    let mut ascii: Vec<Line> = app.mem.chunks(16).map(|c| c.as_ref().iter()).enumerate().map(|(_, x)| {
         // println!("{:?}", x);
          return Line::from(x.map(|&n| {
             if n > 0x20 && n < 0x7F {

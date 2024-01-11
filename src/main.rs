@@ -22,7 +22,7 @@ fn main() -> AppResult<()> {
 
     let mut cf_file = None;
 
-    if (args.len() > 2) {
+    if args.len() > 2 {
         cf_file = Some(args[2].clone());
     }
 

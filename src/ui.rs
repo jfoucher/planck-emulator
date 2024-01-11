@@ -6,14 +6,13 @@ pub mod stateful_list;
 use std::rc::Rc;
 
 use ratatui::{
-    backend::Backend,
-    layout::{Alignment, Rect, Layout, Direction, Constraint},
-    style::{Color, Style, Modifier, Stylize},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap, Clear, Padding, Table, Row},
-    Frame, text::{Line, Span},
+    layout::{Rect, Layout, Direction, Constraint},
+    style::{Color, Style, Stylize},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap, Clear, Padding, Table},
+    Frame,
 };
 
-use crate::{app::App, button::{Button, action_button}};
+use crate::app::App;
 use crate::app::Tab;
 
 
@@ -41,7 +40,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         Tab::Main => main::draw_main_tab(frame, app, chunks[1]),
         Tab::Help => main::draw_main_help(frame, app, chunks[1]),
         Tab::Memory => memory::draw_main_tab(frame, app, chunks[1]),
-        _ => {}
     }
 
     

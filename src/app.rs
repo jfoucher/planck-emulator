@@ -1,17 +1,11 @@
-use std::collections::{HashMap, VecDeque};
-use std::ops::Add;
+use std::collections::VecDeque;
 use std::{error, fs};
-use std::fs::File;
-use std::io::ErrorKind;
-use std::net::TcpStream;
-use std::time::Duration;
 use ratatui::widgets::ScrollbarState;
-use std::thread::{self, JoinHandle};
+use std::thread::{self};
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 
 use crate::computer::{self, Computer, ComputerMessage, Processor};
-use crate::ui::stateful_list::StatefulList;
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +65,7 @@ impl App {
         let (tx, rx) = mpsc::channel::<computer::ControllerMessage>();
         let (computer_tx, computer_rx) = mpsc::channel::<computer::ComputerMessage>();
         let computer_data = data.clone();
-        let child = thread::spawn(move || {
+        let _ = thread::spawn(move || {
             let mut computer = Computer::new(computer_tx, rx, computer_data, disk_data);
             computer.reset();
 
@@ -133,7 +127,6 @@ impl App {
                     self.processor = proc;
                 }
                 ComputerMessage::Output(val) => {
-                    
                     if val == 0x0D {
                         self.output.push_back(String::from(""));
                         if self.output.len() > 20 {
@@ -144,11 +137,8 @@ impl App {
                             l.push(val as char);
                             self.output.push_back(l);
                         }
-                        
                     }
-                    
                 }
-                _ => {}
             };
         }
     }

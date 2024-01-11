@@ -17,20 +17,20 @@ const OUTPUT_END:u16 = 0xfff9;
 
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
-pub enum ADRESSING_MODE {
-    IMMEDIATE = 0,
-    ZERO_PAGE = 1,
-    ZERO_PAGE_X = 2,
-    ABSOLUTE = 3,
-    ABSOLUTE_X = 4,
-    ABSOLUTE_Y = 5,
-    INDIRECT_X = 6,
-    INDIRECT_Y = 7,
-    INDIRECT = 8,
-    ZERO_PAGE_Y = 9,
+pub enum AdressingMode {
+    Immediate = 0,
+    ZeroPage = 1,
+    ZeroPageX = 2,
+    Absolute = 3,
+    AbsoluteX = 4,
+    AbsoluteY = 5,
+    IndirectX = 6,
+    IndirectY = 7,
+    Indirect = 8,
+    ZeroPageY = 9,
     ACCUMULATOR = 10,
-    ZERO_PAGE_INDIRECT = 11,
-    NONE = 12,   
+    ZeroPageIndirect = 11,
+    None = 12,   
 }
 
 pub enum ControllerMessage {
@@ -129,7 +129,6 @@ impl Computer {
                 acc: 0,
                 rx: 0,
                 ry: 0,
-                /// Start at 0x400
                 pc: 0x400,
                 sp: 0,
                 
@@ -163,7 +162,7 @@ impl Computer {
 
         if (self.paused && self.step) || !self.paused {
             self.step = false;
-            let changed = self.run_instruction();
+            let _ = self.run_instruction();
             if self.speed > 0 {
                 thread::sleep(time::Duration::from_millis(self.speed));
             }
@@ -704,19 +703,19 @@ impl Computer {
     }
 
 
-    fn get_ld_adddr(&mut self, addressing_mode: ADRESSING_MODE) -> u16 {
+    fn get_ld_adddr(&mut self, addressing_mode: AdressingMode) -> u16 {
         if LOG_LEVEL > 3 {
             self.add_info(format!("{:#x} - Getting address with mode {:?} for inst {:#x}", self.processor.pc, addressing_mode, self.processor.inst));
         }
 
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             return self.processor.pc + 1;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE {
+        } else if addressing_mode == AdressingMode::Absolute {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let addr = self.get_word(start);
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if addressing_mode == AdressingMode::AbsoluteX {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let start_addr = self.get_word(start);
@@ -726,7 +725,7 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting absolute_x address from: {:#x} rx: {:#x} gives: {:#x}", self.processor.pc, start_addr, rx, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        } else if addressing_mode == AdressingMode::AbsoluteY {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let start_addr = self.get_word(start);
@@ -736,7 +735,7 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting absolute_y address from: {:#x} ry: {:#x} gives: {:#x}", self.processor.pc, start_addr, ry, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+        } else if addressing_mode == AdressingMode::ZeroPage {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let addr: u16 = self.read(start).into();
@@ -744,7 +743,7 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting ZERO_PAGE address from: {:#x} gives: {:#x}", self.processor.pc, start, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y {
+        } else if addressing_mode == AdressingMode::ZeroPageY {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let start_addr = self.read(start).wrapping_add(self.processor.ry);
@@ -753,7 +752,7 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting ZERO_PAGE_Y address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        } else if addressing_mode == AdressingMode::ZeroPageX {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let start_addr = self.read(start).wrapping_add(self.processor.rx);
@@ -762,42 +761,40 @@ impl Computer {
                 self.add_info(format!("{:#x} - Getting ZERO_PAGE_X address from: {:#x} with rx: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.rx, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_Y {
+        } else if addressing_mode == AdressingMode::IndirectY {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let zp_addr = self.read(start);
             let base_addr = self.get_word(zp_addr.into());
             let addr: u16 = base_addr.wrapping_add(self.processor.ry as u16);
             if LOG_LEVEL > 2 {
-                self.add_info(format!("{:#x} - Getting INDIRECT_Y address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
+                self.add_info(format!("{:#x} - Getting Indirect_Y address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_X {
+        } else if addressing_mode == AdressingMode::IndirectX {
             //Absolute adressing
             let start = self.processor.pc + 1;
             let zp_addr = self.read(start).wrapping_add(self.processor.rx);
             let addr: u16 = self.get_word(zp_addr.into());
             
             if LOG_LEVEL > 2 {
-                self.add_info(format!("{:#x} - Getting INDIRECT_X address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
+                self.add_info(format!("{:#x} - Getting Indirect_X address from: {:#x} with ry: {:#x} gives: {:#x}", self.processor.pc, start, self.processor.ry, addr));
             }
             return addr;
-        } else if addressing_mode == ADRESSING_MODE::ACCUMULATOR {
+        } else if addressing_mode == AdressingMode::ACCUMULATOR {
             // Address ignored
             return 0;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
+        } else if addressing_mode == AdressingMode::ZeroPageIndirect {
             let start = self.processor.pc + 1;
             let zp_addr = self.read(start);
             let addr: u16 = self.get_word(zp_addr.into());
             if LOG_LEVEL > 2 {
-                self.add_info(format!("{:#x} - Getting ZERO_PAGE_INDIRECT address from: {:#x} with zp addr: {:#x} gives: {:#x}", self.processor.pc, start, zp_addr, addr));
+                self.add_info(format!("{:#x} - Getting ZERO_PAGE_Indirect address from: {:#x} with zp addr: {:#x} gives: {:#x}", self.processor.pc, start, zp_addr, addr));
             }
             return addr;
         }
 
         panic!("unknown addressing mode {:?} {:#x}", addressing_mode, self.processor.inst);
-
-        return 0;
     }
 
     fn inc(&mut self) {
@@ -806,14 +803,14 @@ impl Computer {
         let mode = addressing_mode;
 
         let addr = self.get_ld_adddr(mode);
-        if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction inc ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 5;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction inc ABS with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
@@ -835,14 +832,14 @@ impl Computer {
         let mode = addressing_mode;
 
         let addr = self.get_ld_adddr(mode);
-        if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction dec ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc += 2;
             self.processor.clock += 5;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction dec ABS with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
@@ -865,21 +862,21 @@ impl Computer {
 
         let addr = self.get_ld_adddr(mode);
 
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldx val: {:#x}", self.processor.pc, value));
             }
             self.processor.pc += 2;
             self.processor.clock += 2;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldx absolute with addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc += 3;
             self.processor.clock += 4;
-        }else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y {
+        }else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageY {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldx ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
@@ -897,21 +894,21 @@ impl Computer {
         let mode = addressing_mode;
         let addr = self.get_ld_adddr(mode);
 
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldy val: {:#x}", self.processor.pc, value));
             }
             self.processor.pc += 2;
             self.processor.clock += 2;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldy absolute with addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc += 3;
             self.processor.clock += 4;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction ldy ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
@@ -927,27 +924,27 @@ impl Computer {
 
     fn lda(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
-        let mut value: u8 = 0;
+        let value;
         let mode = addressing_mode;
         let addr = self.get_ld_adddr(mode);
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
             
             self.processor.pc += 2;
             self.processor.clock += 2;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X|| addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX|| addressing_mode == AdressingMode::AbsoluteY {
             value = self.read(addr);
             self.processor.pc += 3;
             self.processor.clock += 4;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
             self.processor.pc += 2;
             self.processor.clock += 3;
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_Y || addressing_mode == ADRESSING_MODE::INDIRECT_X {
+        } else if addressing_mode == AdressingMode::IndirectY || addressing_mode == AdressingMode::IndirectX {
             value = self.read(addr);
             self.processor.pc += 2;
             self.processor.clock += 5;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
+        } else if addressing_mode == AdressingMode::ZeroPageIndirect {
             value = self.read(addr);
             self.processor.pc += 2;
             self.processor.clock += 5;
@@ -967,16 +964,16 @@ impl Computer {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mode = addressing_mode;
 
-        let mut value: u8 = 0;
+        let value;
         let addr = self.get_ld_adddr(mode);
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction asl {:?} with effective addr: {:#x}", self.processor.pc, mode, addr));
         }
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
-        } else if mode == ADRESSING_MODE::ABSOLUTE || mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if mode == AdressingMode::Absolute || mode == AdressingMode::AbsoluteX {
             self.processor.pc += 3;
             self.processor.clock += 6;
             value = self.read(addr);
@@ -1002,7 +999,7 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
@@ -1013,9 +1010,9 @@ impl Computer {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mode = addressing_mode;
 
-        let mut value: u8 = 0;
+        let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             value = self.processor.acc;
         } else {
             value = self.read(addr);
@@ -1041,11 +1038,11 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction lsr val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             self.processor.pc += 1;
             self.processor.clock += 2;
             self.processor.acc = result;
-        } else if mode == ADRESSING_MODE::ABSOLUTE || mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if mode == AdressingMode::Absolute || mode == AdressingMode::AbsoluteX {
             self.processor.pc += 3;
             self.processor.clock += 6;
 
@@ -1062,13 +1059,13 @@ impl Computer {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mode = addressing_mode;
 
-        let mut value: u8 = 0;
+        let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
-        } else if mode == ADRESSING_MODE::ABSOLUTE || mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if mode == AdressingMode::Absolute || mode == AdressingMode::AbsoluteX {
             value = self.processor.acc;
             self.processor.pc += 3;
             self.processor.clock += 6;
@@ -1098,7 +1095,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction rol val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
@@ -1109,13 +1106,13 @@ impl Computer {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let mode = addressing_mode;
 
-        let mut value: u8 = 0;
+        let value;
         let addr = self.get_ld_adddr(mode);
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             value = self.processor.acc;
             self.processor.pc += 1;
             self.processor.clock += 2;
-        } else if mode == ADRESSING_MODE::ABSOLUTE || mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if mode == AdressingMode::Absolute || mode == AdressingMode::AbsoluteX {
             value = self.processor.acc;
             self.processor.pc += 3;
             self.processor.clock += 6;
@@ -1145,7 +1142,7 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction ror val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
-        if mode == ADRESSING_MODE::ACCUMULATOR {
+        if mode == AdressingMode::ACCUMULATOR {
             self.processor.acc = result;
         } else {
             self.write(addr, result);
@@ -1164,10 +1161,10 @@ impl Computer {
         if LOG_LEVEL > 0 {
             self.add_info(format!("{:#x} - Running instruction bit val: {:#x} result: {:#x}", self.processor.pc, value, result));
         }
-        if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::IMMEDIATE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::Immediate || addressing_mode == AdressingMode::ZeroPageX {
             self.processor.pc += 2;
             self.processor.clock += 3;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X{
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX{
             self.processor.pc += 3;
             self.processor.clock += 4;
         } else {
@@ -1234,11 +1231,10 @@ impl Computer {
     fn cmp(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let acc = self.processor.acc;
-        let mut value: u8 = 0;
         let mut pc = self.processor.pc + 2;
         let addr = self.get_ld_adddr(addressing_mode);
-        value = self.read(addr);
-        if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+        let value = self.read(addr);
+        if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteY || addressing_mode == AdressingMode::AbsoluteX {
             pc += 1;
         }
         
@@ -1251,7 +1247,7 @@ impl Computer {
         if acc == value {
             flags |= FLAG_Z | FLAG_C;
             flags &= !FLAG_N;
-        } else if (acc > value) {
+        } else if acc > value {
             flags |= FLAG_C;
             flags &= !(FLAG_N | FLAG_Z);
         } else {
@@ -1271,15 +1267,15 @@ impl Computer {
     fn cpy(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let ry = self.processor.ry;
-        let mut value: u8 = 0;
-        let mut pc = self.processor.pc + 2;
+        let value: u8;
+        let mut pc = self.processor.pc.wrapping_add(2);
         let addr = self.get_ld_adddr(addressing_mode);
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE {
-            pc += 1;
+        } else if addressing_mode == AdressingMode::Absolute {
+            pc = pc.wrapping_add(1);
             value = self.read(addr);
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+        } else if addressing_mode == AdressingMode::ZeroPage {
             value = self.read(addr);
         } else {
             panic!("Unknown address type {:?} {:#b}, {:#x}", addressing_mode, self.processor.inst, self.processor.inst);
@@ -1290,7 +1286,7 @@ impl Computer {
         if ry == value {
             flags |= FLAG_Z | FLAG_C;
             flags &= !FLAG_N;
-        } else if (ry > value) {
+        } else if ry > value {
             flags |= FLAG_C;
             flags &= !(FLAG_N | FLAG_Z);
         } else {
@@ -1309,15 +1305,15 @@ impl Computer {
     fn cpx(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
         let rx = self.processor.rx;
-        let mut value: u8 = 0;
-        let mut pc = self.processor.pc + 2;
+        let value: u8;
+        let mut pc = self.processor.pc.wrapping_add(2);
         let addr = self.get_ld_adddr(addressing_mode);
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE {
-            pc += 1;
+        } else if addressing_mode == AdressingMode::Absolute {
+            pc = pc.wrapping_add(1);
             value = self.read(addr);
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+        } else if addressing_mode == AdressingMode::ZeroPage {
             value = self.read(addr);
         } else {
             panic!("Unknown address type {:?} inst: {:#x}", addressing_mode, self.processor.inst);
@@ -1328,7 +1324,7 @@ impl Computer {
         if rx == value {
             flags |= FLAG_Z | FLAG_C;
             flags &= !FLAG_N;
-        } else if (rx > value) {
+        } else if rx > value {
             flags |= FLAG_C;
             flags &= !(FLAG_N | FLAG_Z);
         } else {
@@ -1350,21 +1346,21 @@ impl Computer {
         let mut pc = self.processor.pc;
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
-        if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction sta ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
             pc += 3;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X || addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y || addressing_mode == ADRESSING_MODE::ZERO_PAGE_INDIRECT {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX || addressing_mode == AdressingMode::ZeroPageY || addressing_mode == AdressingMode::ZeroPageIndirect {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction sta ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
             pc += 2;
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_Y || addressing_mode == ADRESSING_MODE::INDIRECT_X {
+        } else if addressing_mode == AdressingMode::IndirectY || addressing_mode == AdressingMode::IndirectX {
             if LOG_LEVEL > 0 {
-                self.add_info(format!("{:#x} - Running instruction sta INDIRECT at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
+                self.add_info(format!("{:#x} - Running instruction sta Indirect at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
             pc += 2;
@@ -1383,9 +1379,9 @@ impl Computer {
 
         let mut pc = self.processor.pc;
 
-        if addressing_mode == ADRESSING_MODE::ZERO_PAGE_X || addressing_mode == ADRESSING_MODE::ZERO_PAGE {
+        if addressing_mode == AdressingMode::ZeroPageX || addressing_mode == AdressingMode::ZeroPage {
             pc += 2;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX {
             pc += 3;
         }
 
@@ -1402,12 +1398,12 @@ impl Computer {
         let mut pc = 2;
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
-        if addressing_mode == ADRESSING_MODE::ABSOLUTE {
+        if addressing_mode == AdressingMode::Absolute {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction stx ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
             pc = 3;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_Y {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageY {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction stx ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
@@ -1428,12 +1424,12 @@ impl Computer {
         let mut pc = 2;
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
-        if addressing_mode == ADRESSING_MODE::ABSOLUTE {
+        if addressing_mode == AdressingMode::Absolute {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction sty ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
             pc = 3;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             if LOG_LEVEL > 0 {
                 self.add_info(format!("{:#x} - Running instruction sty ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
@@ -1449,15 +1445,15 @@ impl Computer {
 
     fn jmp(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
-        let mut value: u16 = 0;
-        if addressing_mode == ADRESSING_MODE::ABSOLUTE {
+        let value: u16;
+        if addressing_mode == AdressingMode::Absolute {
             value = self.get_word(self.processor.pc + 1);
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT {
+        } else if addressing_mode == AdressingMode::Indirect {
             let start = self.processor.pc + 1;
     
             let addr = self.get_word(start);
             value = self.get_word(addr);
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_X {
+        } else if addressing_mode == AdressingMode::IndirectX {
             let start = self.processor.pc + 1;
             let addr = self.get_word(start).wrapping_add(self.processor.rx as u16);
             value = self.get_word(addr);
@@ -1477,9 +1473,9 @@ impl Computer {
 
         let should_jump = (self.processor.flags >> 1) & 1 == 0;
         let mut new_addr :u16;
-        new_addr = self.processor.pc + 2;
+        new_addr = self.processor.pc.wrapping_add(2);
         
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1504,10 +1500,10 @@ impl Computer {
         let offset = self.read(self.processor.pc + 1);
         // // println!("Jumping RAW offset is {:?} or 0x{:x?}", offset, offset);
         let should_jump = self.processor.flags & FLAG_Z != 0;
-        let mut new_addr :u16 = self.processor.pc + 2;
+        let mut new_addr :u16 = self.processor.pc.wrapping_add(2);
         
 
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1576,9 +1572,9 @@ impl Computer {
         let offset = self.read(self.processor.pc + 1);
         // // println!("Jumping RAW offset is {:?} or 0x{:x?}", offset, offset);
         let should_jump = self.processor.flags & FLAG_O == 0;
-        let mut new_addr = self.processor.pc + 2;
+        let mut new_addr = self.processor.pc.wrapping_add(2);
         
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1600,9 +1596,9 @@ impl Computer {
         let offset = self.read(self.processor.pc + 1);
         // // println!("Jumping RAW offset is {:?} or 0x{:x?}", offset, offset);
         let should_jump = self.processor.flags & FLAG_O != 0;
-        let mut new_addr = self.processor.pc + 2;
+        let mut new_addr = self.processor.pc.wrapping_add(2);
            
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1681,7 +1677,7 @@ impl Computer {
         let should_jump = (self.processor.flags >> 7) & 1 == 1;
         let mut new_addr :u16;
         new_addr = self.processor.pc + 2;
-        if (should_jump) {
+        if should_jump {
             let rel_address = offset as i8;
             // println!("BPL Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
@@ -1699,16 +1695,16 @@ impl Computer {
 
     fn after_logical_op(&mut self) {
         let addressing_mode = decode::get_adressing_mode(self.processor.inst);
-        if addressing_mode == ADRESSING_MODE::IMMEDIATE {
+        if addressing_mode == AdressingMode::Immediate {
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 2;
-        } else if addressing_mode == ADRESSING_MODE::ZERO_PAGE || addressing_mode == ADRESSING_MODE::ZERO_PAGE_X {
+        } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 3;
-        } else if addressing_mode == ADRESSING_MODE::INDIRECT_X || addressing_mode == ADRESSING_MODE::INDIRECT_Y {
+        } else if addressing_mode == AdressingMode::IndirectX || addressing_mode == AdressingMode::IndirectY {
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock += 6;
-        } else if addressing_mode == ADRESSING_MODE::ABSOLUTE || addressing_mode == ADRESSING_MODE::ABSOLUTE_X || addressing_mode == ADRESSING_MODE::ABSOLUTE_Y {
+        } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock += 4;
         } else {
@@ -1766,26 +1762,23 @@ impl Computer {
         let carry = self.processor.flags & FLAG_C != 0;
         let decimal = self.processor.flags & FLAG_D != 0;
 
-        let mut sum = 0;
+        let sum;
 
-        if (decimal) {
-            let mut s: u16 = 0;
+        if decimal {
             let mut ln = (acc & 0xF) + (val &0xF) + (self.processor.flags & FLAG_C);
             if ln > 9 {
                 ln = 0x10 | ((ln + 6) & 0xf);
             }
-            let mut hn: u16 = (acc & 0xf0) as u16 + (val & 0xf0) as u16;
-            s = hn + ln as u16;
-
-            
+            let hn: u16 = (acc & 0xf0) as u16 + (val & 0xf0) as u16;
+            let mut s = hn + ln as u16;
 
             if s >= 160 {
                 self.processor.flags |= FLAG_C;
-                if ((self.processor.flags & FLAG_O) != 0 && s >= 0x180) { self.processor.flags &= !FLAG_O; }
+                if (self.processor.flags & FLAG_O) != 0 && s >= 0x180 { self.processor.flags &= !FLAG_O; }
                 s += 0x60;
             } else {
                 self.processor.flags &= !FLAG_C;
-                if ((self.processor.flags & FLAG_O) != 0 && s < 0x80) { self.processor.flags &= !FLAG_O; }
+                if (self.processor.flags & FLAG_O) != 0 && s < 0x80 { self.processor.flags &= !FLAG_O; }
             }
             sum  = (s & 0xff) as u8;
             self.processor.flags = Self::set_flags(self.processor.flags, sum);
@@ -1808,13 +1801,12 @@ impl Computer {
         let decimal = self.processor.flags & FLAG_D != 0;
         let acc= self.processor.acc;
 
-        let mut carry: bool = false;
-        let mut sum = 0;
+        let sum;
 
         if decimal {
             let mut w: u16;
             let mut tmp = 0xf + (acc & 0xf) - (val & 0xf) + (self.processor.flags & FLAG_C);
-            if (tmp < 0x10) {
+            if tmp < 0x10 {
                 w = 0;
               tmp -= 6;
             } else {
@@ -1822,13 +1814,13 @@ impl Computer {
               tmp -= 0x10;
             }
             w += 0xf0 + ((acc as u16) & 0xf0) - ((val as u16) & 0xf0);
-            if (w < 0x100) {
+            if w < 0x100 {
               self.processor.flags &= !FLAG_C;
-              if ((self.processor.flags & FLAG_O) != 0 && w < 0x80) { self.processor.flags &= !FLAG_O; }
+              if (self.processor.flags & FLAG_O) != 0 && w < 0x80 { self.processor.flags &= !FLAG_O; }
               w -= 0x60;
             } else {
                 self.processor.flags |= FLAG_C;
-              if ((self.processor.flags & FLAG_O) != 0  && w >= 0x180) { self.processor.flags &= !FLAG_O; }
+              if (self.processor.flags & FLAG_O) != 0  && w >= 0x180 { self.processor.flags &= !FLAG_O; }
             }
             w += tmp as u16;
             sum = w as u8
@@ -1844,17 +1836,15 @@ impl Computer {
     }
 
     fn do_add(&mut self, val: u8) -> u8 {
-        let mut acc = self.processor.acc;
+        let acc = self.processor.acc;
         let mut carry = false;
-        let bit7 = acc >> 7;
         let s = acc as u16 + val as u16 + (self.processor.flags & FLAG_C) as u16;
         
         if s > 255 {
             carry = true;
         }
-        let mut sum = 0;
     
-        sum = acc.wrapping_add(val);
+        let mut sum = acc.wrapping_add(val);
         //Add carry bit
         sum = sum.wrapping_add(self.processor.flags & FLAG_C);
         self.processor.flags = Self::set_flags(self.processor.flags, sum);
@@ -1898,7 +1888,7 @@ impl Computer {
         } else {
             _flags &= !FLAG_Z;
         }
-        if (val >> 7 == 1) {
+        if val >> 7 == 1 {
             _flags |= FLAG_N;
         }else {
             _flags &= !FLAG_N;

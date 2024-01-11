@@ -1,14 +1,10 @@
-use std::time::SystemTime;
-
-use chrono::{DateTime, Local};
 
 use itertools::Itertools;
-use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders, Wrap, ListItem, List, Table, Row, Padding}};
+use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders, Wrap}};
 
 
-use crate::{app::{App, InputMode}, button::{Button, action_button}};
+use crate::{app::App, button::Button};
 use crate::ui::header;
-use super::modal;
 
 const MAIN_HELP_TEXT: &str = "
 This is the Planck 6502 emulator. Enjoy
@@ -16,7 +12,7 @@ This is the Planck 6502 emulator. Enjoy
 
 
 
-pub fn draw_main_help(f: &mut Frame, app: &mut App, area: Rect)
+pub fn draw_main_help(f: &mut Frame, _: &mut App, area: Rect)
 {
 
     let chunks = Layout::default()

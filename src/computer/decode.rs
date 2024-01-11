@@ -1,78 +1,78 @@
-use crate::computer::ADRESSING_MODE;
+use crate::computer::AdressingMode;
 use crate::computer::decode;
 
-pub fn get_adressing_mode(opcode: u8) -> ADRESSING_MODE {
+pub fn get_adressing_mode(opcode: u8) -> AdressingMode {
     let bbb = (opcode >> 2) & 7;
     let cc = opcode & 3;
     
     if opcode == 0x6C {
-        return ADRESSING_MODE::INDIRECT;
+        return AdressingMode::Indirect;
     }
     if opcode == 0x4C {
-        return ADRESSING_MODE::ABSOLUTE;
+        return AdressingMode::Absolute;
     }
     
     if opcode == 0x7C {
-        return ADRESSING_MODE::INDIRECT_X;
+        return AdressingMode::IndirectX;
     }
     
     if opcode == 0x89 {
-        return ADRESSING_MODE::IMMEDIATE;
+        return AdressingMode::Immediate;
     }
     
     if opcode == 0x64 {
-        return ADRESSING_MODE::ZERO_PAGE;
+        return AdressingMode::ZeroPage;
     }
     
     if opcode == 0x9C {
-        return ADRESSING_MODE::ABSOLUTE;
+        return AdressingMode::Absolute;
     }
     
     if opcode == 0x74 {
-        return ADRESSING_MODE::ZERO_PAGE_X;
+        return AdressingMode::ZeroPageX;
     }
 
 
     if opcode == 0x12 || opcode == 0x32 || opcode == 0x52 || opcode == 0x72 || opcode == 0x92 || opcode == 0xB2 || opcode == 0xD2 || opcode == 0xF2 {
-        return ADRESSING_MODE::ZERO_PAGE_INDIRECT;
+        return AdressingMode::ZeroPageIndirect;
     }
     
     if opcode == 0x9E {
-        return ADRESSING_MODE::ABSOLUTE_X;
+        return AdressingMode::AbsoluteX;
     }
 
     match cc {
         0 => {
             match bbb {
-                0b000	=> return ADRESSING_MODE::IMMEDIATE,
-                0b001	=> return ADRESSING_MODE::ZERO_PAGE,
-                0b011	=> return ADRESSING_MODE::ABSOLUTE,
-                0b101	=> return ADRESSING_MODE::ZERO_PAGE_X,
-                0b111	=> return ADRESSING_MODE::ABSOLUTE_X,
+                0b000	=> return AdressingMode::Immediate,
+                0b001	=> return AdressingMode::ZeroPage,
+                0b011	=> return AdressingMode::Absolute,
+                0b101	=> return AdressingMode::ZeroPageX,
+                0b111	=> return AdressingMode::AbsoluteX,
                 _ => {}
             };
         },
         1 => {
             match bbb {
-                0b000	=> return ADRESSING_MODE::INDIRECT_X,
-                0b001	=> return ADRESSING_MODE::ZERO_PAGE,
-                0b010	=> return ADRESSING_MODE::IMMEDIATE,
-                0b011	=> return ADRESSING_MODE::ABSOLUTE,
-                0b100	=> return ADRESSING_MODE::INDIRECT_Y,
-                0b101	=> return ADRESSING_MODE::ZERO_PAGE_X,
-                0b110	=> return ADRESSING_MODE::ABSOLUTE_Y,
-                0b111	=> return ADRESSING_MODE::ABSOLUTE_X,
+                0b000	=> return AdressingMode::IndirectX,
+                0b001	=> return AdressingMode::ZeroPage,
+                0b010	=> return AdressingMode::Immediate,
+                0b011	=> return AdressingMode::Absolute,
+                0b100	=> return AdressingMode::IndirectY,
+                0b101	=> return AdressingMode::ZeroPageX,
+                0b110	=> return AdressingMode::AbsoluteY,
+                0b111	=> return AdressingMode::AbsoluteX,
                 _ => {}
             };
         },
         2 => {
             match bbb {
-                0b000	=> return ADRESSING_MODE::IMMEDIATE,
-                0b001	=> return ADRESSING_MODE::ZERO_PAGE,
-                0b010	=> return ADRESSING_MODE::ACCUMULATOR,
-                0b011	=> return ADRESSING_MODE::ABSOLUTE,
-                0b101	=> if decode::get_opcode_name(opcode) == "STX" || decode::get_opcode_name(opcode) == "LDX" { return ADRESSING_MODE::ZERO_PAGE_Y } else { return ADRESSING_MODE::ZERO_PAGE_X },
-                0b111	=> if decode::get_opcode_name(opcode) == "LDX" { return ADRESSING_MODE::ABSOLUTE_Y } else { return ADRESSING_MODE::ABSOLUTE_X },
+                0b000	=> return AdressingMode::Immediate,
+                0b001	=> return AdressingMode::ZeroPage,
+                0b010	=> return AdressingMode::ACCUMULATOR,
+                0b011	=> return AdressingMode::Absolute,
+                0b101	=> if decode::get_opcode_name(opcode) == "STX" || decode::get_opcode_name(opcode) == "LDX" { return AdressingMode::ZeroPageY } else { return AdressingMode::ZeroPageX },
+                0b111	=> if decode::get_opcode_name(opcode) == "LDX" { return AdressingMode::AbsoluteY } else { return AdressingMode::AbsoluteX },
                 _ => {}
             }
         },
@@ -81,7 +81,7 @@ pub fn get_adressing_mode(opcode: u8) -> ADRESSING_MODE {
 
     
 
-    ADRESSING_MODE::NONE
+    AdressingMode::None
 }
 
 pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
