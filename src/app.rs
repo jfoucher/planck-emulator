@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::time::{SystemTime, Duration};
 use std::{error, fs};
 use ratatui::widgets::ScrollbarState;
 use std::thread::{self};
@@ -52,6 +53,9 @@ pub struct App {
     pub mem: Vec<u8>,
     pub processor: Processor,
     pub cursor_position: usize,
+    pub tick_time: SystemTime,
+    pub old_clock: u128,
+    pub speed: f64,
 }
 
 
@@ -102,16 +106,28 @@ impl App {
                 inst: 0xea,
             },
             cursor_position: 0,
+            tick_time: SystemTime::now(),
+            old_clock: 0,
+            speed: 0.0,
         }
     }
 
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {
-        if self.current_tab == Tab::Memory {
-            let _ = self.tx.send(computer::ControllerMessage::GetMemory);
-            let _ = self.tx.send(computer::ControllerMessage::GetProc);
+        match self.current_tab {
+            Tab::Main => {
+                let _ = self.tx.send(computer::ControllerMessage::GetProc);
+            },
+            Tab::Memory => {
+                let _ = self.tx.send(computer::ControllerMessage::GetMemory);
+                let _ = self.tx.send(computer::ControllerMessage::GetProc);
+            },
+            Tab::Help => { },
         }
+
+
+
         
         while let Some(message) = self.rx.try_iter().next() {
             // Handle messages arriving from the UI.
@@ -129,6 +145,23 @@ impl App {
 
                 ComputerMessage::Processor(proc) => {
                     self.processor = proc;
+
+
+                    let t = SystemTime::now();
+
+                    let a = match t.duration_since(self.tick_time) {
+                        Ok(t) => t.as_millis(),
+                        Err(_) => 20,
+                    };
+
+                    if a > 1000 {
+                        self.speed = (self.processor.clock as f64 - self.old_clock as f64) / a as f64;
+
+                        self.tick_time = SystemTime::now();
+                        self.old_clock = self.processor.clock;
+                    }
+                
+                    
                 }
                 ComputerMessage::Output(val) => {
                     if val == 0x0D || val == 0x0A {

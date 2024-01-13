@@ -1,11 +1,13 @@
 
 
+use std::time::SystemTime;
+
 use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
 
 use crate::{app::App, button::Button};
 use crate::button::footer_button;
 
-pub fn draw_header(frame: &mut Frame, _: &mut App, area: Rect)
+pub fn draw_header(frame: &mut Frame, app: &mut App, area: Rect)
 {
 
     let header = Layout::default()
@@ -19,18 +21,27 @@ pub fn draw_header(frame: &mut Frame, _: &mut App, area: Rect)
     )
     .split(area);
 
-    let p = Paragraph::new("Planck emulator")
+    let p = Paragraph::new(Span::styled(
+        "  Planck 6502 emulator", Style::new().white().on_green().add_modifier(Modifier::BOLD)
+    ))
+    .alignment(Alignment::Left)
         .block(Block::default()
             .borders(Borders::NONE)
+            .on_green()
         );
 
     frame.render_widget(p, header[0]);
 
 
-    let sl = Paragraph::new("Another")
+    let sl = Paragraph::new(Span::styled(format!("{:03.2} MHz  ", app.speed/1000.0), 
+    Style::new().white().on_green().add_modifier(Modifier::BOLD)))
+    
+    .alignment(Alignment::Right)
         .block(Block::default()
             //.title("")
             .borders(Borders::NONE)
+            .on_green()
+            
         );
 
     frame.render_widget(sl, header[1]);

@@ -118,7 +118,7 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         &mut app.output_scroll_state,
     );
 
-    let mut cy = chunks[1].y + app.output.len() as u16 - app.output_scroll as u16;
+    let cy = chunks[1].y + app.output.len() as u16 - app.output_scroll as u16;
     // if cy > chunks[1].y+chunks[1].height - 2 {
     //     cy = chunks[1].y+chunks[1].height - 2;
     // }
