@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time;
 use std::thread;
@@ -38,6 +39,7 @@ pub enum ControllerMessage {
     GetMemory,
     GetProc,
     Reset,
+    SendChar(char)
 }
 
 pub enum ComputerMessage {
@@ -134,7 +136,7 @@ impl Computer {
                 
                 clock: 0,
                 inst: 0xea,
-            }
+            },
         }
     }
 
@@ -150,6 +152,12 @@ impl Computer {
                 }
                 ControllerMessage::Reset => {
                     self.reset();
+                }
+                ControllerMessage::SendChar(c) => {
+                    let _ = self.tx.send(ComputerMessage::Info(format!("setting acia data {:?}", c)));
+
+                    self.data[0xFFE0] = c as u8;
+                    self.data[0xFFE1] = 0x08;
                 }
                 _ => {},
             };
@@ -194,8 +202,12 @@ impl Computer {
                 }
                 return 0x50;
             }
-        } else if addr >= OUTPUT_START && addr <= OUTPUT_END {
-            return 0;
+        } if addr == 0xFFE0 {
+            self.data[0xFFE1] = 0;
+            let v = self.data[0xFFE0];
+            let _ = self.tx.send(ComputerMessage::Info(format!("READ acia data {:?}", v as char)));
+            self.data[0xFFE0] = 0;
+            return v;
         }
         return self.data[addr as usize];
     }
@@ -243,6 +255,7 @@ impl Computer {
 
         } else if addr == 0xFFE0 {
             // Serial out
+            let _ = self.tx.send(ComputerMessage::Info(format!("sending {:#x}", value)));
             let _ = self.tx.send(ComputerMessage::Output(value));
         }
 

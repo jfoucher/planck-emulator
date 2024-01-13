@@ -41,15 +41,17 @@ pub struct App {
     /// Is the application running?
     pub running: bool,
     pub current_tab: Tab,
-    pub input: String,
     pub output: VecDeque<String>,
     pub debug: VecDeque<String>,
     pub rx: Receiver<computer::ComputerMessage>,
     pub tx: Sender<computer::ControllerMessage>,
     pub memory_scroll_state: ScrollbarState,
     pub memory_scroll: usize,
+    pub output_scroll_state: ScrollbarState,
+    pub output_scroll: usize,
     pub mem: Vec<u8>,
     pub processor: Processor,
+    pub cursor_position: usize,
 }
 
 
@@ -80,13 +82,14 @@ impl App {
         Self {
             running: true,
             current_tab: Tab::Main,
-            input: String::from(""),
             output,
             debug: VecDeque::new(),
             tx,
             rx: computer_rx,
             memory_scroll_state: ScrollbarState::default(),
             memory_scroll: 0,
+            output_scroll_state: ScrollbarState::default(),
+            output_scroll: 0,
             mem: vec![],
             processor: Processor {
                 flags: 0b00110000,
@@ -97,7 +100,8 @@ impl App {
                 sp: 0,
                 clock: 0,
                 inst: 0xea,
-            }
+            },
+            cursor_position: 0,
         }
     }
 
@@ -114,7 +118,7 @@ impl App {
             match message {
                 ComputerMessage::Info(info) => {
                     self.debug.push_back(info);
-                    if self.debug.len() > 20 {
+                    if self.debug.len() > 10 {
                         self.debug.pop_front();
                     }
                 }
@@ -127,15 +131,23 @@ impl App {
                     self.processor = proc;
                 }
                 ComputerMessage::Output(val) => {
-                    if val == 0x0D {
+                    if val == 0x0D || val == 0x0A {
+                        self.cursor_position = 0;
                         self.output.push_back(String::from(""));
-                        if self.output.len() > 20 {
-                            self.output.pop_front();
+                        if self.output.len() > 22 {
+                            self.output_scroll = self.output.len() - 20;
+                        }
+                    }else if val == 0x08 {
+                        if let Some(mut l) = self.output.pop_back() {
+                            l.pop();
+                            self.output.push_back(l);
+                            self.cursor_position = self.cursor_position.saturating_sub(1);
                         }
                     } else {
                         if let Some(mut l) = self.output.pop_back() {
                             l.push(val as char);
                             self.output.push_back(l);
+                            self.cursor_position = self.cursor_position.saturating_add(1);
                         }
                     }
                 }

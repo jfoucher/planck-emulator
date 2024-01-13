@@ -62,6 +62,9 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
 
     let txt = vec![
         Line::from(format!("PC: {:04X}", app.processor.pc)),
+        Line::from(format!("SP: {:04X}", app.processor.sp)),
+        Line::from(format!("ST: {:04X}", app.processor.flags)),
+        Line::from(""),
         Line::from(format!("A: {:02X}", app.processor.acc)),
         Line::from(format!("X: {:02X}", app.processor.rx)),
         Line::from(format!("Y: {:02X}", app.processor.ry)),

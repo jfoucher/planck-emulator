@@ -1,4 +1,4 @@
-use crate::{app::{App, AppResult, Tab}};
+use crate::{app::{App, AppResult, Tab}, computer};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Handles the key events and updates the state of [`App`].
@@ -7,10 +7,7 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
         KeyCode::Esc => {
             match app.current_tab {
                 Tab::Main => {
-                    app.quit();
-                },
-                Tab::Help => {
-                    app.quit();
+                    let _ = app.tx.send(computer::ControllerMessage::SendChar(0x1B as char));
                 },
                 _ => {},
             };
@@ -49,6 +46,7 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
             match app.current_tab {
                 Tab::Main => {
                     // Send data to computer
+                    let _ = app.tx.send(computer::ControllerMessage::SendChar(0x0D as char));
                 },
                 _ => {},
             }
@@ -60,6 +58,10 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                     app.memory_scroll = app.memory_scroll.saturating_sub(1);
                     app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
                 },
+                Tab::Main => {
+                    app.output_scroll = app.output_scroll.saturating_sub(1);
+                    app.output_scroll_state = app.output_scroll_state.position(app.output_scroll);
+                },
                 _ => {},
             }
         }
@@ -69,6 +71,10 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                 Tab::Memory => {
                     app.memory_scroll = app.memory_scroll.saturating_add(1);
                     app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                Tab::Main => {
+                    app.output_scroll = app.output_scroll.saturating_add(1);
+                    app.output_scroll_state = app.output_scroll_state.position(app.output_scroll);
                 },
                 _ => {},
             }
@@ -80,6 +86,10 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                     app.memory_scroll = app.memory_scroll.saturating_sub(16);
                     app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
                 },
+                Tab::Main => {
+                    app.output_scroll = app.output_scroll.saturating_sub(16);
+                    app.output_scroll_state = app.output_scroll_state.position(app.output_scroll);
+                },
                 _ => {},
             }
         }
@@ -89,6 +99,10 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                 Tab::Memory => {
                     app.memory_scroll = app.memory_scroll.saturating_add(16);
                     app.memory_scroll_state = app.memory_scroll_state.position(app.memory_scroll);
+                },
+                Tab::Main => {
+                    app.output_scroll = app.output_scroll.saturating_add(16);
+                    app.output_scroll_state = app.output_scroll_state.position(app.output_scroll);
                 },
                 _ => {},
             }
@@ -100,7 +114,9 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
             }
             match app.current_tab {
                 Tab::Main => {
-                    app.input.push(c)
+                    let _ = app.tx.send(computer::ControllerMessage::SendChar(c));
+                    return Ok(()) ;
+                    //app.cursor_position = app.cursor_position.saturating_add(1);
                 },
                 _ => {
                     
@@ -110,7 +126,8 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
         KeyCode::Backspace => {
             match app.current_tab {
                 Tab::Main => {
-                    app.input.pop();
+                    let _ = app.tx.send(computer::ControllerMessage::SendChar(0x08 as char));
+                    // app.cursor_position = app.cursor_position.saturating_sub(1);
                 },
                 _ => {},
             }
