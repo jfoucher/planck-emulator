@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::time::{SystemTime, Duration};
+use std::time::{SystemTime};
 use std::{error, fs};
 use ratatui::widgets::ScrollbarState;
 use std::thread::{self};
@@ -56,6 +56,7 @@ pub struct App {
     pub tick_time: SystemTime,
     pub old_clock: u128,
     pub speed: f64,
+    pub log_level: u8,
 }
 
 
@@ -109,9 +110,9 @@ impl App {
             tick_time: SystemTime::now(),
             old_clock: 0,
             speed: 0.0,
+            log_level: 0,
         }
     }
-
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {

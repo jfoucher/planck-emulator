@@ -1,6 +1,6 @@
 
 
-use std::time::SystemTime;
+
 
 use ratatui::{Frame, prelude::*, widgets::{Paragraph, Block, Borders}};
 
@@ -33,7 +33,7 @@ pub fn draw_header(frame: &mut Frame, app: &mut App, area: Rect)
     frame.render_widget(p, header[0]);
 
 
-    let sl = Paragraph::new(Span::styled(format!("{:03.2} MHz  ", app.speed/1000.0), 
+    let sl = Paragraph::new(Span::styled(format!("Log level: {} {:03.2} MHz  ", app.log_level, app.speed/1000.0), 
     Style::new().white().on_green().add_modifier(Modifier::BOLD)))
     
     .alignment(Alignment::Right)

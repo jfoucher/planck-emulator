@@ -140,6 +140,9 @@ pub fn draw_main_tab(f: &mut Frame, app: &mut App, area: Rect)
         Button::new("Memory".to_string(), Some("3".to_string())),
 
         Button::new("Reset".to_string(), Some("4".to_string())),
+        Button::new("Debug -".to_string(), Some("5".to_string())),
+        Button::new("Debug +".to_string(), Some("6".to_string())),
+        Button::new("Pause".to_string(), Some("7".to_string())),
     ];
 
     header::draw_footer(f, chunks[2], buttons); 

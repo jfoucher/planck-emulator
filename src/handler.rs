@@ -41,6 +41,36 @@ pub fn handle_key_events(key_event: KeyEvent, app: &mut App) -> AppResult<()> {
                 _ => {}
             }
         }
+
+        KeyCode::F(5) => {
+            match app.current_tab {
+                Tab::Main => {
+                    app.log_level = app.log_level.saturating_sub(1);
+                    let _ = app.tx.send(crate::computer::ControllerMessage::SetDebug(app.log_level));
+                },
+                _ => {}
+            }
+        }
+
+        KeyCode::F(6) => {
+            match app.current_tab {
+                Tab::Main => {
+                    app.log_level = app.log_level.saturating_add(1);
+                    let _ = app.tx.send(crate::computer::ControllerMessage::SetDebug(app.log_level));
+                },
+                _ => {}
+            }
+        }
+
+
+        KeyCode::F(7) => {
+            match app.current_tab {
+                Tab::Main => {
+                    let _ = app.tx.send(crate::computer::ControllerMessage::TogglePause);
+                },
+                _ => {}
+            }
+        }
         
         KeyCode::Enter => {
             match app.current_tab {

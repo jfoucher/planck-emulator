@@ -34,7 +34,9 @@ pub enum ControllerMessage {
     GetMemory,
     GetProc,
     Reset,
-    SendChar(char)
+    TogglePause,
+    SendChar(char),
+    SetDebug(u8),
 }
 
 pub enum ComputerMessage {
@@ -50,6 +52,8 @@ pub enum DiskCommand {
     Write = 0x30,
     None = 0,
 }
+
+
 
 impl TryFrom<u8> for DiskCommand {
     type Error = ();
@@ -77,6 +81,22 @@ pub struct Processor {
     pub inst: u8,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CardType {
+    CF,
+    Serial,
+    IO,
+    Ram,
+    None,
+}
+
+#[derive(Clone, Debug)]
+pub struct Card {
+    slot: u16,
+    card_type: CardType,
+}
+
+
 #[derive(Debug)]
 pub struct Computer {
     log_level: u8,
@@ -92,7 +112,10 @@ pub struct Computer {
     tx: mpsc::Sender<ComputerMessage>,
     rx: mpsc::Receiver<ControllerMessage>,
     pub info: Vec<Info>,
+    pub cards: Vec<Card>,
 }
+
+
 const FLAG_C: u8 = 1;
 const FLAG_Z: u8 = 2;
 const FLAG_I: u8 = 4;
@@ -101,6 +124,9 @@ const FLAG_O: u8 = 0x40;
 const FLAG_N: u8 = 0x80;
 
 const CF_ADDRESS: u16 = 0xFFD0;
+
+const IO_BASE: u16 = 0xFF80;
+const IO_TOP: u16 = 0xFFEF;
 
 impl Computer {
     pub fn new(tx: mpsc::Sender<ComputerMessage>, rx:  mpsc::Receiver<ControllerMessage>, mut data: Vec<u8>, disk: Vec<u8>) -> Computer {
@@ -134,6 +160,16 @@ impl Computer {
                 clock: 0,
                 inst: 0xea,
             },
+            cards: vec![
+                Card {
+                    slot: 5,
+                    card_type: CardType::CF,
+                },
+                Card {
+                    slot: 6,
+                    card_type: CardType::Serial,
+                }
+            ],
         }
     }
 
@@ -151,8 +187,21 @@ impl Computer {
                     self.reset();
                 }
                 ControllerMessage::SendChar(c) => {
-                    self.data[0xFFE0] = c as u8;
-                    self.data[0xFFE1] = 0x08;
+                    if let Some(serial) = self.cards.iter().find(|a| a.card_type == CardType::Serial) {
+                        let addr = IO_BASE + serial.slot * 0x10;
+                        if self.log_level > 2 {
+                            let _ = self.tx.send(ComputerMessage::Info(format!("serial out {:#x}", addr)));
+                        }
+                        
+                        self.data[addr as usize] = c as u8;
+                        self.data[addr as usize + 1] = 0x08;
+                    }
+                }
+                ControllerMessage::SetDebug(c) => {
+                    self.log_level = c;
+                }
+                ControllerMessage::TogglePause => {
+                    self.paused = !self.paused;
                 }
                 _ => {},
             };
@@ -175,81 +224,100 @@ impl Computer {
     }
 
     fn read(&mut self, addr: u16) -> u8 {
-        // Ignore IO
-        if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
-            let reg = addr & 7;
-            // let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
-            if reg == 0 {
-                if self.command == DiskCommand::Read {
-                    let v = self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize];
-                    //let _ = self.tx.send(ComputerMessage::Info(format!("read disk {:?} {:?} {:?}, {:#x}", self.lba, self.disk_cnt, (self.lba * 512 + self.disk_cnt as u32), v)));
-
-                    self.disk_cnt += 1;
-                    if self.disk_cnt > 512 {
-                        self.command = DiskCommand::None;
-                    }
-                    return v;
-                }
-                return 0;
-            } else if reg == 7 {
-                if self.command != DiskCommand::None {
-                    return 0x58;
-                }
-                return 0x50;
+        if addr >= IO_BASE && addr <= IO_TOP {
+            // Get card type at this address
+            let slot = ((addr & 0xF0) >> 4) - 8;
+            if self.log_level > 2 {
+                let _ = self.tx.send(ComputerMessage::Info(format!("calling card at address and slot slot {:#x} {:}", addr, slot)));
             }
-        } if addr == 0xFFE0 {
-            self.data[0xFFE1] = 0;
-            let v = self.data[0xFFE0];
-            self.data[0xFFE0] = 0;
-            return v;
+            if let Some(card) = self.cards.iter().find(|a| a.slot == slot) {
+                if self.log_level > 2 {
+                    let _ = self.tx.send(ComputerMessage::Info(format!("card type {:?}", card.card_type)));
+                }
+                if card.card_type == CardType::CF && self.disk.len() > 0 {
+                    let reg = addr & 7;
+                    // let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
+                    if reg == 0 {
+                        if self.command == DiskCommand::Read {
+                            let v = self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize];
+                            //let _ = self.tx.send(ComputerMessage::Info(format!("read disk {:?} {:?} {:?}, {:#x}", self.lba, self.disk_cnt, (self.lba * 512 + self.disk_cnt as u32), v)));
+        
+                            self.disk_cnt += 1;
+                            if self.disk_cnt > 512 {
+                                self.command = DiskCommand::None;
+                            }
+                            return v;
+                        }
+                        return 0;
+                    } else if reg == 7 {
+                        if self.command != DiskCommand::None {
+                            return 0x58;
+                        }
+                        return 0x50;
+                    }
+                } else if card.card_type == CardType::Serial {
+                    let reg = addr & 7;
+                    if reg == 0 {
+                        let a = IO_BASE + card.slot * 0x10;
+                        self.data[a as usize +1] = 0;
+                        let v = self.data[a as usize];
+                        self.data[a as usize] = 0;
+                        return v;
+                    }
+                    
+                }
+            }
         }
+
         return self.data[addr as usize];
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        if self.disk.len() > 0 && (addr >= CF_ADDRESS)  && addr < (CF_ADDRESS + 0x10) {
-            
-            let reg = addr & 7;
-            //let _ = self.tx.send(ComputerMessage::Info(format!("disk write {:?} {:#x}", reg, value)));
-            if reg == 0 {
-                if self.command == DiskCommand::Write {
-                    self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
-                    self.disk_cnt += 1;
-                    if self.disk_cnt > 512 {
-                        self.command = DiskCommand::None;
+        if addr >= IO_BASE && addr <= IO_TOP {
+            let slot = ((addr & 0xF0) >> 4) - 8;
+            if let Some(card) = self.cards.iter().find(|a| a.slot == slot) {
+                if card.card_type == CardType::CF && self.disk.len() > 0 {
+                    let reg = addr & 7;
+
+                    if reg == 0 {
+                        if self.command == DiskCommand::Write {
+                            self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
+                            self.disk_cnt += 1;
+                            if self.disk_cnt > 512 {
+                                self.command = DiskCommand::None;
+                            }
+                        }
+                    } else if reg == 2 {
+                        // TODO set number of sectors to read
+                    } else if reg == 3 {
+                        self.lba &= 0xFFFFFF00;
+                        self.lba |= value as u32;
+                    } else if reg == 4 {
+                        self.lba &= 0xFFFF00FF;
+                        self.lba |= (value as u32) << 8;
+                    } else if reg == 5 {
+                        self.lba &= 0xFF00FFFF;
+                        self.lba |= (value as u32) << 16;
+                    } else if reg == 6 {
+                        self.lba &= 0x00FFFFFF;
+                        self.lba |= ((value as u32) << 24) & 0xF;
+                    } else if reg == 7 {
+                        self.command = match value.try_into() {
+                            Ok(c) => c,
+                            Err(_) => DiskCommand::None,
+                        };
+                        if self.command != DiskCommand::None {
+                            // set count of bytes in sector to zero
+                            self.disk_cnt = 0;
+                        }
+                    }
+                } else if card.card_type == CardType::Serial {
+                    let reg = addr & 7;
+                    if reg == 0 {
+                        let _ = self.tx.send(ComputerMessage::Output(value));
                     }
                 }
-            } else if reg == 2 {
-                // TODO set number of sectors to read
-            } else if reg == 3 {
-                self.lba &= 0xFFFFFF00;
-                self.lba |= value as u32;
-            } else if reg == 4 {
-                self.lba &= 0xFFFF00FF;
-                self.lba |= (value as u32) << 8;
-            } else if reg == 5 {
-                self.lba &= 0xFF00FFFF;
-                self.lba |= (value as u32) << 16;
-            } else if reg == 6 {
-                self.lba &= 0x00FFFFFF;
-                self.lba |= ((value as u32) << 24) & 0xF;
-            } else if reg == 7 {
-                self.command = match value.try_into() {
-                    Ok(c) => c,
-                    Err(_) => DiskCommand::None,
-                };
-                if self.command != DiskCommand::None {
-                    // set count of bytes in sector to zero
-                    self.disk_cnt = 0;
-                }
-                
-                //let _ = self.tx.send(ComputerMessage::Info(format!("disk command {:?}", self.command)));
-
             }
-
-        } else if addr == 0xFFE0 {
-            // Serial out
-            let _ = self.tx.send(ComputerMessage::Output(value));
         }
 
         self.data[addr as usize] = value;
@@ -1905,7 +1973,7 @@ impl Computer {
         if self.log_level > 0 {
             self.add_info(format!("{:#x} - Running instruction nop: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
-        if self.processor.inst != 0xea && self.log_level > 1 {
+        if self.processor.inst != 0xea && self.log_level > 2 {
             self.speed = 10;
         }
         
