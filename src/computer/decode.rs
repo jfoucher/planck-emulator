@@ -24,11 +24,11 @@ pub fn get_adressing_mode(opcode: u8) -> AdressingMode {
         return AdressingMode::Accumulator;
     }
     
-    if opcode == 0x64 {
+    if opcode == 0x64 || opcode == 0x14 || opcode == 0x04 {
         return AdressingMode::ZeroPage;
     }
     
-    if opcode == 0x9C {
+    if opcode == 0x9C || opcode == 0x1C || opcode == 0x0C {
         return AdressingMode::Absolute;
     }
     
@@ -94,7 +94,10 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
 
     match opcode {
         0x02 => return "NOP2",
+        0x04 => return "TSB",
+        0x0C => return "TSB",
         0x12 => return "ORA",
+        0x14 => return "TRB",
         0x32 => return "AND",
         0x52 => return "EOR",
         0x72 => return "ADC",
@@ -112,6 +115,7 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
         0x54 => return "NOP2",
         0xD4 => return "NOP2",
         0xF4 => return "NOP2",
+        0x1C => return "TRB",
         0x5C => return "NOP3",
         0xDC => return "NOP3",
         0xFC => return "NOP3",
@@ -126,6 +130,8 @@ pub fn get_opcode_name<'a>(opcode: u8) -> &'a str {
         // 65C02 instruction
         0x7C => return "JMP",
         0x5A => return "PHY",
+        0x1A => return "INC",
+        0x3A => return "DEC",
         0x7A => return "PLY",
         0xDA => return "PHX",
         0xFA => return "PLX",

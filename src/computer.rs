@@ -1,7 +1,23 @@
+use itertools::Itertools;
+
+use crate::computer::card::CardData;
+use crate::computer::card::CardType;
+use crate::computer::card::Card;
+use crate::computer::cf::Cf;
+use crate::computer::empty::Empty;
+use crate::computer::cia::Cia;
+use crate::computer::via::Via;
+use std::ops::DerefMut;
 use std::sync::mpsc;
 use std::time;
 use std::thread;
 
+
+mod card;
+mod via;
+mod cf;
+mod cia;
+mod empty;
 mod decode;
 #[derive(Clone, Debug)]
 pub struct Info {
@@ -46,28 +62,6 @@ pub enum ComputerMessage {
     Processor(Processor)
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum DiskCommand {
-    Read = 0x20,
-    Write = 0x30,
-    None = 0,
-}
-
-
-
-impl TryFrom<u8> for DiskCommand {
-    type Error = ();
-
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v {
-            x if x == DiskCommand::Read as u8 => Ok(DiskCommand::Read),
-            x if x == DiskCommand::Write as u8 => Ok(DiskCommand::Write),
-            x if x == DiskCommand::None as u8 => Ok(DiskCommand::None),
-            _ => Err(()),
-        }
-    }
-}
-
 
 #[derive(Clone, Debug)]
 pub struct Processor {
@@ -79,40 +73,26 @@ pub struct Processor {
     pub sp: u8,
     pub clock: u128,
     pub inst: u8,
+    pub irq: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CardType {
-    CF,
-    Serial,
-    IO,
-    Ram,
-    None,
-}
-
-#[derive(Clone, Debug)]
-pub struct Card {
-    slot: u16,
-    card_type: CardType,
-}
 
 
 #[derive(Debug)]
-pub struct Computer {
+pub struct Computer<'a> {
     log_level: u8,
     processor: Processor,
     paused: bool,
     step: bool,
-    lba: u32,
-    disk_cnt: u16,
-    command: DiskCommand,
+    
+    
     speed: u64,
     data: Vec<u8>,
-    disk: Vec<u8>,
+    
     tx: mpsc::Sender<ComputerMessage>,
     rx: mpsc::Receiver<ControllerMessage>,
     pub info: Vec<Info>,
-    pub cards: Vec<Card>,
+    pub cards: Vec<CardData<'a>>,
 }
 
 
@@ -120,29 +100,81 @@ const FLAG_C: u8 = 1;
 const FLAG_Z: u8 = 2;
 const FLAG_I: u8 = 4;
 const FLAG_D: u8 = 8;
+const FLAG_B: u8 = 0x10;
+const FLAG_ALWAYS: u8 = 0x20;
 const FLAG_O: u8 = 0x40;
 const FLAG_N: u8 = 0x80;
-
-const CF_ADDRESS: u16 = 0xFFD0;
 
 const IO_BASE: u16 = 0xFF80;
 const IO_TOP: u16 = 0xFFEF;
 
-impl Computer {
-    pub fn new(tx: mpsc::Sender<ComputerMessage>, rx:  mpsc::Receiver<ControllerMessage>, mut data: Vec<u8>, disk: Vec<u8>) -> Computer {
+
+impl<'a> Computer<'static> {
+    pub fn new(tx: mpsc::Sender<ComputerMessage>, rx:  mpsc::Receiver<ControllerMessage>, mut data: Vec<u8>, disk: Vec<u8>) -> Computer<'static> {
         let rom_size = data.len();
         let mut ram: Vec<u8> = vec![0; 0x10000-rom_size];
         ram.fill(0);
         ram.append(&mut data);
 
+        let mut cards = vec![
+        
+            CardData {
+                card_type: CardType::IO,
+                value: Box::new(Via {
+                    timer1cnt: 0,
+                    timer2cnt: 0,
+                    timer1latch: 0,
+                    timer2latch: 0,
+                    ifr: 0,
+                    ier: 0,
+                    acr: 0,
+                    pcr: 0,
+                    interrupt: false,
+                }),
+            },
+            CardData {
+                card_type: CardType::None,
+                value: Box::new(Empty{}),
+            },
+            CardData {
+                card_type: CardType::None,
+                value: Box::new(Empty{}),
+            },
+            CardData {
+                card_type: CardType::None,
+                value: Box::new(Empty{}),
+            },
+            CardData {
+                card_type: CardType::None,
+                value: Box::new(Empty{}),
+            },
+            CardData {
+                card_type: CardType::None,
+                value: Box::new(Empty{}),
+            },
+            CardData {
+                card_type: CardType::Serial,
+                value: Box::new(Cia{}),
+            },
+        ];
+
+        if disk.len() > 0 {
+        
+            cards[5] = CardData {
+                card_type: CardType::CF,
+                value: Box::new(Cf{
+                    disk_cnt: 0,
+                    disk: disk,
+                    command: cf::DiskCommand::None,
+                    lba: 0,
+                }),
+            };
+        }
+
 
         Self {
             log_level: 0,
             data: ram,
-            disk,
-            lba: 0,
-            disk_cnt: 0,
-            command: DiskCommand::None,
             tx,
             rx,
             paused: false,
@@ -156,20 +188,11 @@ impl Computer {
                 ry: 0,
                 pc: 0x400,
                 sp: 0,
-                
                 clock: 0,
                 inst: 0xea,
+                irq: false,
             },
-            cards: vec![
-                Card {
-                    slot: 5,
-                    card_type: CardType::CF,
-                },
-                Card {
-                    slot: 6,
-                    card_type: CardType::Serial,
-                }
-            ],
+            cards,
         }
     }
 
@@ -187,9 +210,9 @@ impl Computer {
                     self.reset();
                 }
                 ControllerMessage::SendChar(c) => {
-                    if let Some(serial) = self.cards.iter().find(|a| a.card_type == CardType::Serial) {
-                        let addr = IO_BASE + serial.slot * 0x10;
-                        if self.log_level > 2 {
+                    if let Some(serial) = self.cards.iter().find_position(|a| a.card_type == CardType::Serial) {
+                        let addr = IO_BASE + serial.0 as u16 * 0x10;
+                        if self.log_level > 0 {
                             let _ = self.tx.send(ComputerMessage::Info(format!("serial out {:#x}", addr)));
                         }
                         
@@ -214,11 +237,28 @@ impl Computer {
 
         if (self.paused && self.step) || !self.paused {
             self.step = false;
+            // Tick all cards
+            self.processor.irq = false;
+            self.cards.iter_mut().for_each(|card| {
+                card.value.tick();
+                if card.value.get_interrupt() {
+                    self.processor.irq = true;
+                }
+            }
+            );
+            // TODO check for interrupt
+            if self.processor.irq {
+                log::info!("IRQ");
+                self.irq();
+                self.processor.irq = false;
+            }
             let _ = self.run_instruction();
             if self.speed > 0 {
                 thread::sleep(time::Duration::from_millis(self.speed));
             }
         }
+
+        
 
         true
     }
@@ -227,46 +267,31 @@ impl Computer {
         if addr >= IO_BASE && addr <= IO_TOP {
             // Get card type at this address
             let slot = ((addr & 0xF0) >> 4) - 8;
-            if self.log_level > 2 {
+            if self.log_level > 0 {
                 let _ = self.tx.send(ComputerMessage::Info(format!("calling card at address and slot slot {:#x} {:}", addr, slot)));
             }
-            if let Some(card) = self.cards.iter().find(|a| a.slot == slot) {
-                if self.log_level > 2 {
-                    let _ = self.tx.send(ComputerMessage::Info(format!("card type {:?}", card.card_type)));
-                }
-                if card.card_type == CardType::CF && self.disk.len() > 0 {
-                    let reg = addr & 7;
-                    // let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
-                    if reg == 0 {
-                        if self.command == DiskCommand::Read {
-                            let v = self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize];
-                            //let _ = self.tx.send(ComputerMessage::Info(format!("read disk {:?} {:?} {:?}, {:#x}", self.lba, self.disk_cnt, (self.lba * 512 + self.disk_cnt as u32), v)));
-        
-                            self.disk_cnt += 1;
-                            if self.disk_cnt > 512 {
-                                self.command = DiskCommand::None;
-                            }
-                            return v;
-                        }
-                        return 0;
-                    } else if reg == 7 {
-                        if self.command != DiskCommand::None {
-                            return 0x58;
-                        }
-                        return 0x50;
-                    }
-                } else if card.card_type == CardType::Serial {
-                    let reg = addr & 7;
-                    if reg == 0 {
-                        let a = IO_BASE + card.slot * 0x10;
-                        self.data[a as usize +1] = 0;
-                        let v = self.data[a as usize];
-                        self.data[a as usize] = 0;
-                        return v;
-                    }
-                    
-                }
+            let card = &mut self.cards[slot as usize];
+            if self.log_level > 0 {
+                let _ = self.tx.send(ComputerMessage::Info(format!("card type {:?}", card.card_type)));
             }
+            if card.card_type == CardType::CF {
+                let reg = addr & 7;
+                
+                // let _ = self.tx.send(ComputerMessage::Info(format!("disk read reg {:?}", reg)));
+                return card.value.read(reg);
+            } else if card.card_type == CardType::Serial {
+                let reg = addr & 7;
+                if reg == 0 {
+                    let a = IO_BASE + slot * 0x10;
+                    self.data[a as usize +1] = 0;
+                    let v = self.data[a as usize];
+                    self.data[a as usize] = 0;
+                    return v;
+                }
+            } else if card.card_type == CardType::IO {
+                return card.value.read(addr & 0xF);
+            }
+            
         }
 
         return self.data[addr as usize];
@@ -275,49 +300,24 @@ impl Computer {
     fn write(&mut self, addr: u16, value: u8) {
         if addr >= IO_BASE && addr <= IO_TOP {
             let slot = ((addr & 0xF0) >> 4) - 8;
-            if let Some(card) = self.cards.iter().find(|a| a.slot == slot) {
-                if card.card_type == CardType::CF && self.disk.len() > 0 {
-                    let reg = addr & 7;
+            let card = &mut self.cards[slot as usize];
 
-                    if reg == 0 {
-                        if self.command == DiskCommand::Write {
-                            self.disk[(self.lba * 512 + self.disk_cnt as u32) as usize] = value;
-                            self.disk_cnt += 1;
-                            if self.disk_cnt > 512 {
-                                self.command = DiskCommand::None;
-                            }
-                        }
-                    } else if reg == 2 {
-                        // TODO set number of sectors to read
-                    } else if reg == 3 {
-                        self.lba &= 0xFFFFFF00;
-                        self.lba |= value as u32;
-                    } else if reg == 4 {
-                        self.lba &= 0xFFFF00FF;
-                        self.lba |= (value as u32) << 8;
-                    } else if reg == 5 {
-                        self.lba &= 0xFF00FFFF;
-                        self.lba |= (value as u32) << 16;
-                    } else if reg == 6 {
-                        self.lba &= 0x00FFFFFF;
-                        self.lba |= ((value as u32) << 24) & 0xF;
-                    } else if reg == 7 {
-                        self.command = match value.try_into() {
-                            Ok(c) => c,
-                            Err(_) => DiskCommand::None,
-                        };
-                        if self.command != DiskCommand::None {
-                            // set count of bytes in sector to zero
-                            self.disk_cnt = 0;
-                        }
-                    }
-                } else if card.card_type == CardType::Serial {
-                    let reg = addr & 7;
-                    if reg == 0 {
-                        let _ = self.tx.send(ComputerMessage::Output(value));
+            log::info!("write to slot {:?} car type {:?}", slot, card.card_type);
+
+            if card.card_type == CardType::CF {
+                let _ = card.value.write(addr, value);
+            } else if card.card_type == CardType::Serial {
+                let reg = addr & 7;
+                if reg == 0 {
+                    let _ = self.tx.send(ComputerMessage::Output(value));
+                    if self.log_level > 0 {
+                        let _ = self.tx.send(ComputerMessage::Info(format!("serial out {:#x}", value)));
                     }
                 }
+            } else if card.card_type == CardType::IO {
+                card.value.write(addr & 0xF, value);
             }
+            
         }
 
         self.data[addr as usize] = value;
@@ -327,10 +327,7 @@ impl Computer {
 
     pub fn reset(&mut self) {
         self.paused = true;
-        self.lba = 0;
         self.processor.clock = 0;
-        self.disk_cnt = 0;
-        self.command = DiskCommand::None;
         self.processor.pc = self.get_word(0xfffc);
         self.paused = false;
     }
@@ -405,6 +402,9 @@ impl Computer {
             "TXS" => self.txs(),
             "TYA" => self.tya(),
 
+            "TRB" => self.trb(),
+            "TSB" => self.tsb(),
+
             "BBS0" => self.bbs(0),
             "BBS1" => self.bbs(1),
             "BBS2" => self.bbs(2),
@@ -458,7 +458,7 @@ impl Computer {
     }
 
     fn cld(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction cld: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -467,7 +467,7 @@ impl Computer {
     }
 
     fn txs(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction txs: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -477,7 +477,7 @@ impl Computer {
 
     fn tsx(&mut self) {
         self.processor.flags = Self::set_flags( self.processor.flags, self.processor.sp);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction tsx: {:#x} val: {:#x} flags:{:#x} ", self.processor.pc, self.data[(self.processor.pc) as usize], self.processor.sp, self.processor.flags));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -486,7 +486,7 @@ impl Computer {
     }
 
     fn tya(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction tya: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -496,7 +496,7 @@ impl Computer {
     }
 
     fn tay(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction tay: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -506,7 +506,7 @@ impl Computer {
     }
 
     fn tax(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction tax: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -516,7 +516,7 @@ impl Computer {
     }
 
     fn txa(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction txa: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.flags = Self::set_flags(self.processor.flags, self.processor.rx);
@@ -537,7 +537,7 @@ impl Computer {
         self.write(sp1, (this_pc & 0xff) as u8);
         // Send to new address
         let addr = self.get_word(self.processor.pc + 1);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction jsr to: {:#x}", self.processor.pc, addr));
         }
         self.processor.sp = self.processor.sp.wrapping_sub(2);
@@ -554,13 +554,43 @@ impl Computer {
 
         self.write(sp, ((this_pc>>8) & 0xff) as u8);
         self.write(sp1, (this_pc & 0xff) as u8);
-        self.write(sp2, (self.processor.flags) | 0x30);
+        self.write(sp2, (self.processor.flags) | FLAG_ALWAYS | FLAG_B);
 
         self.processor.flags |= FLAG_I;
+        self.processor.flags &= !FLAG_D;
+        
         self.processor.sp = self.processor.sp.wrapping_sub(3);
 
         let new_addr: u16 = self.get_word(0xfffe);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
+            self.add_info(format!("{:#x} - Running instruction brk ({:#x}) to: {:#x} flags: {:#b}", self.processor.pc, self.processor.inst, new_addr, self.processor.flags));
+        }
+        self.processor.pc = new_addr;
+
+        self.processor.clock  = self.processor.clock.wrapping_add(7);
+    }
+
+    fn irq(&mut self) {
+        if self.processor.flags & FLAG_I != 0 {
+            return;
+        }
+        let sp: u16 = (self.processor.sp as u16 + 0x100 as u16).into();
+        let sp1: u16 = (self.processor.sp.wrapping_sub(1) as u16 + 0x100 as u16).into();
+        let sp2: u16 = (self.processor.sp.wrapping_sub(2) as u16 + 0x100 as u16).into();
+
+        let this_pc = self.processor.pc;
+
+        self.write(sp, ((this_pc>>8) & 0xff) as u8);
+        self.write(sp1, (this_pc & 0xff) as u8);
+        self.write(sp2, (self.processor.flags) | FLAG_ALWAYS);
+
+        self.processor.flags |= FLAG_I;
+        self.processor.flags &= !FLAG_D;
+        
+        self.processor.sp = self.processor.sp.wrapping_sub(3);
+
+        let new_addr: u16 = self.get_word(0xfffe);
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction brk ({:#x}) to: {:#x} flags: {:#b}", self.processor.pc, self.processor.inst, new_addr, self.processor.flags));
         }
         self.processor.pc = new_addr;
@@ -580,7 +610,7 @@ impl Computer {
         self.processor.flags = flags;
         let addr: u16 = low_byte as u16 | ((high_byte as u16) << 8) as u16;
         // Send to new address
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction rti to: {:#x} flags: {:#x}", self.processor.pc, addr, self.processor.flags));
         }
         self.processor.sp = self.processor.sp.wrapping_add(3);
@@ -596,7 +626,7 @@ impl Computer {
         let high_byte = self.read(sp2);
         let addr: u16 = low_byte as u16 | ((high_byte as u16) << 8) as u16;
         // Send to new address
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction rts to: {:#x}", self.processor.pc, addr));
         }
         self.processor.sp = self.processor.sp.wrapping_add(2);
@@ -607,7 +637,7 @@ impl Computer {
     /// Clear carry flag
     fn clc(&mut self) {
         self.processor.flags &= !FLAG_C;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction clc: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -617,7 +647,7 @@ impl Computer {
     /// Set carry flag
     fn sec(&mut self) {
         self.processor.flags |= FLAG_C;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction sec: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -627,7 +657,7 @@ impl Computer {
     /// Set decimal flag
     fn sed(&mut self) {
         self.processor.flags |= FLAG_D;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction sed: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -637,7 +667,7 @@ impl Computer {
     /// Clear interrupt disabled flag
     fn cli(&mut self) {
         self.processor.flags &= !FLAG_I;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction cli: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -647,7 +677,7 @@ impl Computer {
     /// Set interrupt disabled flag
     fn sei(&mut self) {
         self.processor.flags |= FLAG_I;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction sei: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -657,7 +687,7 @@ impl Computer {
     /// clear overflow flag
     fn clv(&mut self) {
         self.processor.flags &= !FLAG_O;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction clv: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -670,7 +700,7 @@ impl Computer {
         
         self.write(addr, self.processor.acc);
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction pha at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.sp = self.processor.sp.wrapping_sub(1);
@@ -684,7 +714,7 @@ impl Computer {
         
         self.write(addr, self.processor.rx);
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction phx at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.sp = self.processor.sp.wrapping_sub(1);
@@ -699,7 +729,7 @@ impl Computer {
         
         self.write(addr, self.processor.ry);
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction phx at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.sp = self.processor.sp.wrapping_sub(1);
@@ -712,7 +742,7 @@ impl Computer {
         let addr: u16 = (self.processor.sp as u16 + 0x100 as u16).into();
 
         self.write(addr, self.processor.flags | 0x30);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction php at: {:#x} flags: {:#x}", self.processor.pc, addr, self.processor.flags | 0x30));
         }
         self.processor.sp = self.processor.sp.wrapping_sub(1);
@@ -728,7 +758,7 @@ impl Computer {
         self.processor.acc = self.read(addr);
         let flags = self.processor.flags;
         self.processor.flags = Self::set_flags(flags, self.processor.acc);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction pla at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -743,7 +773,7 @@ impl Computer {
         self.processor.rx = self.read(addr);
         let flags = self.processor.flags;
         self.processor.flags = Self::set_flags(flags, self.processor.rx);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction plx at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -758,7 +788,7 @@ impl Computer {
         self.processor.ry = self.read(addr);
         let flags = self.processor.flags;
         self.processor.flags = Self::set_flags(flags, self.processor.ry);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction ply at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -771,7 +801,7 @@ impl Computer {
         let addr: u16 = (self.processor.sp as u16 + 0x100 as u16).into();
         
         self.processor.flags = self.read(addr);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction plp at: {:#x} flags: {:#x}", self.processor.pc, addr, self.processor.flags));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -880,19 +910,24 @@ impl Computer {
         let mut value: u8 = self.processor.acc;
         let mode = addressing_mode;
         self.processor.clock  = self.processor.clock.wrapping_add(2);
-    
+        if addressing_mode == AdressingMode::Accumulator {
+            self.processor.acc = value.wrapping_add(1);
+            self.processor.pc = self.processor.pc.wrapping_add(1);
+            self.processor.flags = Self::set_flags(self.processor.flags, self.processor.acc);
+            return;
+        }
 
         let addr = self.get_ld_adddr(mode);
         if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction inc ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock  = self.processor.clock.wrapping_add(3);
         } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction inc ABS with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(3);
@@ -916,17 +951,24 @@ impl Computer {
 
         self.processor.clock  = self.processor.clock.wrapping_add(2);
 
+        if addressing_mode == AdressingMode::Accumulator {
+            self.processor.acc = value.wrapping_sub(1);
+            self.processor.pc = self.processor.pc.wrapping_add(1);
+            self.processor.flags = Self::set_flags(self.processor.flags, self.processor.acc);
+            return;
+        }
+
         let addr = self.get_ld_adddr(mode);
         if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction dec ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock  = self.processor.clock.wrapping_add(3);
         } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction dec ABS with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(3);
@@ -952,21 +994,21 @@ impl Computer {
 
         if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldx val: {:#x}", self.processor.pc, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock  = self.processor.clock.wrapping_add(2);
         } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldx absolute with addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock  = self.processor.clock.wrapping_add(4);
         }else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageY {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldx ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
@@ -987,21 +1029,21 @@ impl Computer {
 
         if addressing_mode == AdressingMode::Immediate {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldy val: {:#x}", self.processor.pc, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock  = self.processor.clock.wrapping_add(2);
         } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldy absolute with addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock  = self.processor.clock.wrapping_add(4);
         } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
             value = self.read(addr);
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction ldy ZP with effective addr: {:#x} and val: {:#x}", self.processor.pc, addr, value));
             }
             self.processor.pc = self.processor.pc.wrapping_add(2);
@@ -1046,7 +1088,7 @@ impl Computer {
             panic!("This adressing mode is not implemented yet, sorry");
         }
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction lda {:?} addr: {:#x} val: {:#x}", self.processor.pc, addressing_mode, addr, value));
         }
         
@@ -1060,8 +1102,8 @@ impl Computer {
 
         let value;
         let addr = self.get_ld_adddr(mode);
-        if self.log_level > 0 {
-            self.add_info(format!("{:#x} - Running instruction asl {:?} with effective addr: {:#x}", self.processor.pc, mode, addr));
+        if self.log_level > 3 {
+            self.add_info(format!("{:#x} - Running instruction asl {:#x} {:?} with effective addr: {:#x}", self.processor.pc, self.processor.inst, mode, addr));
         }
         if mode == AdressingMode::Accumulator {
             value = self.processor.acc;
@@ -1129,7 +1171,7 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction lsr val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
         if mode == AdressingMode::Accumulator {
@@ -1186,8 +1228,8 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if self.log_level > 0 {
-            self.add_info(format!("{:#x} - Running instruction rol val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
+        if self.log_level > 3 {
+            self.add_info(format!("{:#x} - Running instruction rol {:#x} val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc,self.processor.inst, value, result, self.processor.flags, old_flags));
         }
         if mode == AdressingMode::Accumulator {
             self.processor.acc = result;
@@ -1233,7 +1275,7 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_N;
         }
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction ror val: {:#x} result: {:#x} flags: {:#x} old flags: {:#x}", self.processor.pc, value, result, self.processor.flags, old_flags));
         }
         if mode == AdressingMode::Accumulator {
@@ -1252,9 +1294,7 @@ impl Computer {
 
         let result = self.processor.acc & value;
 
-        if self.log_level > 0 {
-            self.add_info(format!("{:#x} - Running instruction bit val: {:#x} result: {:#x}", self.processor.pc, value, result));
-        }
+        
         if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::Immediate || addressing_mode == AdressingMode::ZeroPageX {
             self.processor.pc = self.processor.pc.wrapping_add(2);
             self.processor.clock  = self.processor.clock.wrapping_add(3);
@@ -1270,22 +1310,67 @@ impl Computer {
         } else {
             self.processor.flags &= !FLAG_Z;
         }
-        if value >> 7 & 1 == 1 {
-            self.processor.flags |= FLAG_N;
-        } else {
-            self.processor.flags &= !FLAG_N;
+        if addressing_mode != AdressingMode::Immediate {
+            if value & 0x80 == 0x80 {
+                self.processor.flags |= FLAG_N;
+            } else {
+                self.processor.flags &= !FLAG_N;
+            }
+            if value & 0x40 == 0x40 {
+                self.processor.flags |= FLAG_O;
+            } else {
+                self.processor.flags &= !FLAG_O;
+            }
         }
-        if value >> 6 & 1 == 1 {
-            self.processor.flags |= FLAG_O;
-        } else {
-            self.processor.flags &= !FLAG_O;
+
+        if self.log_level > 3 {
+            self.add_info(format!("{:#x} - Running instruction bit {:#x} val: {:#x} result: {:#x} flags: {:#x}", self.processor.pc, self.processor.inst, value, result, self.processor.flags));
         }
     }
+
+    fn trb(&mut self) {
+        let addressing_mode = decode::get_adressing_mode(self.processor.inst);
+        let addr = self.get_ld_adddr(addressing_mode);
+        let value = self.read(addr);
+        let result = self.processor.acc & !value;
+        self.write(addr, result);
+        if self.processor.acc & value == 0 {
+            self.processor.flags |= FLAG_Z;
+        } else {
+            self.processor.flags &= !FLAG_Z;
+        }
+        self.processor.pc = self.processor.pc.wrapping_add(2);
+        self.processor.clock  = self.processor.clock.wrapping_add(5);
+        if addressing_mode == AdressingMode::Absolute {
+            self.processor.pc = self.processor.pc.wrapping_add(1);
+            self.processor.clock  = self.processor.clock.wrapping_add(1);
+        }
+    }
+
+    fn tsb(&mut self) {
+        let addressing_mode = decode::get_adressing_mode(self.processor.inst);
+        let addr = self.get_ld_adddr(addressing_mode);
+        let value = self.read(addr);
+        let result = value | self.processor.acc;
+        self.write(addr, result);
+        if value & self.processor.acc == 0 {
+            self.processor.flags |= FLAG_Z;
+        } else {
+            self.processor.flags &= !FLAG_Z;
+        }
+        self.processor.pc = self.processor.pc.wrapping_add(2);
+        self.processor.clock  = self.processor.clock.wrapping_add(5);
+        if addressing_mode == AdressingMode::Absolute {
+            self.processor.pc = self.processor.pc.wrapping_add(1);
+            self.processor.clock  = self.processor.clock.wrapping_add(1);
+        }
+    }
+
 
     fn inx(&mut self) {
         self.processor.rx = self.processor.rx.wrapping_add(1);
         self.processor.flags = Self::set_flags(self.processor.flags, self.processor.rx);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction inx: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.rx, self.processor.flags));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -1295,7 +1380,7 @@ impl Computer {
     fn iny(&mut self) {
         self.processor.ry = self.processor.ry.wrapping_add(1);
         self.processor.flags = Self::set_flags(self.processor.flags, self.processor.ry);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction iny: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.ry, self.processor.flags));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -1305,7 +1390,7 @@ impl Computer {
     fn dex(&mut self) {
         self.processor.rx = self.processor.rx.wrapping_sub(1);
         self.processor.flags = Self::set_flags(self.processor.flags, self.processor.rx);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction dex: new val: {:#x} flags: {:#x}", self.processor.pc, self.processor.rx, self.processor.flags));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -1315,7 +1400,7 @@ impl Computer {
     fn dey(&mut self) {
         self.processor.ry = self.processor.ry.wrapping_sub(1);
         self.processor.flags = Self::set_flags(self.processor.flags,  self.processor.ry);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction dey: {:#x} new val: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], self.processor.ry));
         }
         self.processor.pc = self.processor.pc.wrapping_add(1);
@@ -1348,7 +1433,7 @@ impl Computer {
             flags |= FLAG_N;
             flags &= !(FLAG_C | FLAG_Z);
         }
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction cmp: {:#x} with acc: {:#x} val: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], acc, value, flags));
         }
 
@@ -1388,7 +1473,7 @@ impl Computer {
             flags |= FLAG_N;
             flags &= !(FLAG_C | FLAG_Z);
         }
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction cpy ry: {:#x} with val: {:#x} flags: {:#x}", self.processor.pc, ry, value, flags));
         }
 
@@ -1427,7 +1512,7 @@ impl Computer {
             flags |= FLAG_N;
             flags &= !(FLAG_C | FLAG_Z);
         }
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction cpx rx: {:#x} with val: {:#x} flags: {:#x}", self.processor.pc, rx, value, flags));
         }
 
@@ -1444,19 +1529,19 @@ impl Computer {
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
         if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction sta ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
             pc += 3;
         } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX || addressing_mode == AdressingMode::ZeroPageY || addressing_mode == AdressingMode::ZeroPageIndirect {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction sta ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
             pc += 2;
         } else if addressing_mode == AdressingMode::IndirectY || addressing_mode == AdressingMode::IndirectX {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction sta Indirect at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.acc));
             }
 
@@ -1497,12 +1582,12 @@ impl Computer {
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
         if addressing_mode == AdressingMode::Absolute {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction stx ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
             pc = 3;
         } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageY {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction stx ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
         }
@@ -1524,12 +1609,12 @@ impl Computer {
         let addr = self.get_ld_adddr(addressing_mode);
     // // println!("sta addr 0x{:x?}", addr);
         if addressing_mode == AdressingMode::Absolute {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction sty ABS at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
             pc = 3;
         } else if addressing_mode == AdressingMode::ZeroPage || addressing_mode == AdressingMode::ZeroPageX {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction sty ZP at: {:#x} val: {:#x}", self.processor.pc, addr, self.processor.rx));
             }
         }
@@ -1565,7 +1650,7 @@ impl Computer {
             panic!("Adressing mode not implemented yet {:?} inst: {:#x}", addressing_mode, self.processor.inst);
         }
         self.processor.clock += 5;
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction jmp: {:#x} to: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], value));
         }
         //// println!("Jumping to 0x{:x?}", addr);
@@ -1583,11 +1668,11 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bne {:#x} jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
             }
         } else {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bne NOT jumping to: {:#x} flags: {:#x}", self.processor.pc, new_addr, self.processor.flags));
             }
         }
@@ -1611,11 +1696,11 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction beq {:#x} jumping to: {:#x} flags: {:#x} offset {}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags, offset as i8));
             }
         } else {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction beq not jumping to: {:#x} flags: {:#x}", self.processor.pc, new_addr, self.processor.flags));
             }
         }
@@ -1635,11 +1720,11 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bcc jumping to: {:#x} flags: {:#x} offset: {}", self.processor.pc, new_addr, self.processor.flags, offset as i8));
             }
         } else {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bcc NOT jumping to: {:#x} flags: {:#x} offset: {}", self.processor.pc, new_addr, self.processor.flags, offset as i8));
             }
         }
@@ -1658,12 +1743,12 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bcs {:#x} jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
-            } else {
-                if self.log_level > 0 {
-                    self.add_info(format!("{:#x} - Running instruction bcs not jumping to: {:#x} flags: {:#x}", self.processor.pc, new_addr, self.processor.flags));
-                }
+            }
+        } else {
+            if self.log_level > 3 {
+                self.add_info(format!("{:#x} - Running instruction bcs not jumping to: {:#x} flags: {:#x}", self.processor.pc, new_addr, self.processor.flags));
             }
         }
         self.processor.clock  = self.processor.clock.wrapping_add(3);
@@ -1682,11 +1767,11 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bvc {:#x} jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
             }
         } else {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bvc {:#x} NOT jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
             }
         }
@@ -1706,11 +1791,11 @@ impl Computer {
             let rel_address = offset as i8;
             // // println!("Jumping offset {:?}", rel_address);
             new_addr = ((new_addr as i32) + (rel_address as i32)) as u16;
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bvs {:#x} jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
             }  
         } else {
-            if self.log_level > 0 {
+            if self.log_level > 3 {
                 self.add_info(format!("{:#x} - Running instruction bvs {:#x} NOT jumping to: {:#x} flags: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize], new_addr, self.processor.flags));
             }
         }
@@ -1811,8 +1896,11 @@ impl Computer {
         } else if addressing_mode == AdressingMode::Absolute || addressing_mode == AdressingMode::AbsoluteX || addressing_mode == AdressingMode::AbsoluteY {
             self.processor.pc = self.processor.pc.wrapping_add(3);
             self.processor.clock  = self.processor.clock.wrapping_add(4);
+        } else if addressing_mode == AdressingMode::ZeroPageIndirect {
+            self.processor.pc = self.processor.pc.wrapping_add(2);
+            self.processor.clock  = self.processor.clock.wrapping_add(5);
         } else {
-            self.add_info(format!("{:#x} - this addressing mode not implemented for instruction {:?}", self.processor.pc, addressing_mode));
+            self.add_info(format!("{:#x} - this addressing mode not implemented for instruction {:#x} {:?}", self.processor.pc, self.processor.inst, addressing_mode));
         }
     }
 
@@ -1821,7 +1909,7 @@ impl Computer {
 
         let result = self.processor.acc & value;
         self.processor.flags = Self::set_flags(self.processor.flags, result);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction and with acc: {:#x} value: {:#x} result: {:#x} flags: {:#x}", self.processor.pc, self.processor.acc, value, result, self.processor.flags));
         }
 
@@ -1834,7 +1922,7 @@ impl Computer {
 
         let result = self.processor.acc ^ value;
         self.processor.flags = Self::set_flags(self.processor.flags, result);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction eor {:#x} with acc: {:#x} value: {:#x} result: {:#x} flags: {:#x}", self.processor.pc, self.processor.inst, value, result, self.processor.acc, self.processor.flags));
         }
 
@@ -1847,7 +1935,7 @@ impl Computer {
 
         let result = self.processor.acc | value;
         self.processor.flags = Self::set_flags(self.processor.flags, result);
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction ora {:#x} with acc: {:#x} value: {:#x} result: {:#x} flags: {:#x}", self.processor.pc, self.processor.inst, value, result, self.processor.acc, self.processor.flags));
         }
 
@@ -1889,7 +1977,7 @@ impl Computer {
         }
         
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction adc with acc: {:#x} memval: {:#x} flags: {:#x} carry: {} result: {:#x}", self.processor.pc, self.processor.acc, val, self.processor.flags, carry, sum));
         }
         self.processor.acc = sum;
@@ -1910,7 +1998,7 @@ impl Computer {
             let mut tmp = 0xf + (acc & 0xf) - (val & 0xf) + (self.processor.flags & FLAG_C);
             if tmp < 0x10 {
                 w = 0;
-              tmp -= 6;
+              tmp = tmp.wrapping_sub(6);
             } else {
               w = 0x10;
               tmp -= 0x10;
@@ -1918,8 +2006,10 @@ impl Computer {
             w += 0xf0 + ((acc as u16) & 0xf0) - ((val as u16) & 0xf0);
             if w < 0x100 {
               self.processor.flags &= !FLAG_C;
-              if (self.processor.flags & FLAG_O) != 0 && w < 0x80 { self.processor.flags &= !FLAG_O; }
-              w -= 0x60;
+              if (self.processor.flags & FLAG_O) != 0 && w < 0x80 {
+                self.processor.flags &= !FLAG_O;
+              }
+              w = w.wrapping_sub(0x60);
             } else {
                 self.processor.flags |= FLAG_C;
               if (self.processor.flags & FLAG_O) != 0  && w >= 0x180 { self.processor.flags &= !FLAG_O; }
@@ -1930,7 +2020,7 @@ impl Computer {
             sum = self.do_add(!val);
         }
 
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction sbc with acc: {:#x} memval: {:#x} flags: {:#x}", self.processor.pc, self.processor.acc, val, self.processor.flags));
         }
         self.processor.acc = sum as u8;
@@ -1970,7 +2060,7 @@ impl Computer {
     }
 
     fn nop(&mut self) {
-        if self.log_level > 0 {
+        if self.log_level > 3 {
             self.add_info(format!("{:#x} - Running instruction nop: {:#x}", self.processor.pc, self.data[(self.processor.pc) as usize]));
         }
         if self.processor.inst != 0xea && self.log_level > 2 {

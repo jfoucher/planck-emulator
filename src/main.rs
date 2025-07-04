@@ -10,6 +10,10 @@ use std::{io, env};
 
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use log::LevelFilter;
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Config, Root};
 
 
 fn main() -> AppResult<()> {
@@ -25,6 +29,19 @@ fn main() -> AppResult<()> {
     if args.len() > 2 {
         cf_file = Some(args[2].clone());
     }
+
+    // Initialize log writer
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build("output.log")?;
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder()
+        .appender("logfile")
+        .build(LevelFilter::Debug))?;
+
+    log4rs::init_config(config)?;
 
     let mut app = App::new(args[1].clone(), cf_file);
 

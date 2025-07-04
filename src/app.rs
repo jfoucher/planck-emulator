@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::time::{SystemTime};
+use std::time::SystemTime;
 use std::{error, fs};
 use ratatui::widgets::ScrollbarState;
 use std::thread::{self};
@@ -76,7 +76,7 @@ impl App {
             let mut computer = Computer::new(computer_tx, rx, computer_data, disk_data);
             computer.reset();
 
-            loop {
+            loop { 
                 computer.step();
             }
         });
@@ -105,6 +105,7 @@ impl App {
                 sp: 0,
                 clock: 0,
                 inst: 0xea,
+                irq: false,
             },
             cursor_position: 0,
             tick_time: SystemTime::now(),
@@ -134,7 +135,8 @@ impl App {
             // Handle messages arriving from the UI.
             match message {
                 ComputerMessage::Info(info) => {
-                    self.debug.push_back(info);
+                    self.debug.push_back(info.clone());
+                    log::info!("{}", info);
                     if self.debug.len() > 10 {
                         self.debug.pop_front();
                     }
